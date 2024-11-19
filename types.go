@@ -7,6 +7,11 @@ type TypeMeta struct {
 	Size      int
 }
 
+var (
+	pointerSize  = 8
+	pointerAlign = 8
+)
+
 var TypeMap = map[string]TypeMeta{
 	"char":                   {1, 1},
 	"signed char":            {1, 1},
