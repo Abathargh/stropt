@@ -2,7 +2,7 @@ module github.com/Abathargh/stropt
 
 go 1.23.0
 
-require modernc.org/cc/v4 v4.23.0
+require modernc.org/cc/v4 v4.23.1
 
 require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
