@@ -14,8 +14,8 @@ func TestStructBasicTypes(t *testing.T) {
 		{
 			"#include <stdint.h> struct test_struct { uint64_t a; };",
 			Context{
-				"test_struct": {
-					Name:   "test_struct",
+				"struct test_struct": {
+					Name:   "struct test_struct",
 					Fields: []Field{{Name: "a", Type: "uint64_t", IsPointer: false}},
 					Kind:   StructKind,
 				},
@@ -25,8 +25,8 @@ func TestStructBasicTypes(t *testing.T) {
 		{
 			"struct test_mul { int a; float b; double d; long long l; };",
 			Context{
-				"test_mul": {
-					Name: "test_mul",
+				"struct test_mul": {
+					Name: "struct test_mul",
 					Fields: []Field{
 						{Name: "a", Type: "int", IsPointer: false},
 						{Name: "b", Type: "float", IsPointer: false},
@@ -41,11 +41,11 @@ func TestStructBasicTypes(t *testing.T) {
 		{
 			"struct test_ptr { int * a; void (*fp)(float, double); int arr[100]; };",
 			Context{
-				"test_ptr": {
+				"struct test_ptr": {
 					Name: "test_ptr",
 					Fields: []Field{
-						{Name: "a", Type: "int", IsPointer: true},
-						{Name: "fp", Type: "", IsPointer: true},
+						{Name: "a", Type: "int *", IsPointer: true},
+						{Name: "fp", Type: "void (*)(float, double)", IsPointer: true},
 						{Name: "arr", Type: "int[100]", IsPointer: false},
 					},
 					Kind: StructKind,
@@ -66,12 +66,20 @@ func TestStructBasicTypes(t *testing.T) {
 					},
 					Kind: UnionKind,
 				},
-				"test_ptr": {
-					Name: "test_ptr",
+				"struct un": {
+					Name: "struct un",
 					Fields: []Field{
-						{Name: "a", Type: "int*", IsPointer: true},
-						{Name: "fp", Type: "", IsPointer: true},
-						{Name: "arr", Type: "int[100]", IsPointer: false},
+						{Name: "f", Type: "float", IsPointer: false},
+						{Name: "i", Type: "int", IsPointer: false},
+						{Name: "ui", Type: "uint64_t", IsPointer: false},
+					},
+					Kind: UnionKind,
+				},
+				"struct test_ptr": {
+					Name: "struct test_ptr",
+					Fields: []Field{
+						{Name: "a", Type: "int *", IsPointer: true},
+						{Name: "fp", Type: "void (*)(float, double)", IsPointer: true},
 					},
 					Kind: StructKind,
 				},
@@ -81,11 +89,33 @@ func TestStructBasicTypes(t *testing.T) {
 		{
 			`struct test_ptr { const int * a; const int * const b; };`,
 			Context{
-				"test_ptr": {
-					Name: "test_ptr",
+				"struct test_ptr": {
+					Name: "struct test_ptr",
 					Fields: []Field{
 						{Name: "a", Type: "const int *", IsPointer: true},
-						{Name: "b", Type: "const int *const", IsPointer: true},
+						{Name: "b", Type: "const int * const", IsPointer: true},
+					},
+					Kind: StructKind,
+				},
+			},
+			nil,
+		},
+		{
+			`struct inner { int a; };
+			struct test_inner { int a1; struct inner a2; };`,
+			Context{
+				"struct inner": {
+					Name: "struct inner",
+					Fields: []Field{
+						{Name: "a", Type: "int", IsPointer: false},
+					},
+					Kind: StructKind,
+				},
+				"struct test_inner": {
+					Name: "struct test_inner",
+					Fields: []Field{
+						{Name: "a1", Type: "int", IsPointer: false},
+						{Name: "a2", Type: "struct inner", IsPointer: false},
 					},
 					Kind: StructKind,
 				},
@@ -105,7 +135,12 @@ func TestStructBasicTypes(t *testing.T) {
 		}
 
 		for name, agg := range structs {
-			exp := testCase.expected[name]
+			exp, ok := testCase.expected[name]
+			if !ok {
+				t.Errorf("Cannot find name %q in parsed struct", agg.Name)
+				continue
+			}
+
 			if agg.Name != exp.Name {
 				t.Errorf("Expected aggregate name %q: got %q", exp.Name, agg.Name)
 			}
@@ -155,9 +190,18 @@ func TestComputeMeta(t *testing.T) {
 		{
 			`#include <stdint.h> 
 			struct a1 { int32_t a; int64_t b; int8_t c; int32_t d; };`,
-			"a1",
+			"struct a1",
 			24,
 			8,
+			nil,
+		},
+		{
+			`#include <stdint.h> 
+			struct t1 { int16_t a; int8_t b; };
+			struct s1 { int32_t a; struct t1 t; int32_t d; };`,
+			"struct s1",
+			12,
+			4,
 			nil,
 		},
 	}
@@ -173,7 +217,7 @@ func TestComputeMeta(t *testing.T) {
 		if err != nil {
 			if !errors.Is(err, testCase.expectedErr) {
 				t.Errorf("Expected error %v: got %v", testCase.expectedErr, err)
-				t.Errorf("%v", meta)
+				t.Errorf("%v", structs)
 			}
 			continue
 		}

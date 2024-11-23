@@ -16,16 +16,12 @@ type Field struct {
 	IsPointer bool // if this is true do not need to do size/alignment resolution since it is just a pointer
 }
 
-type LayoutType interface {
-}
-
 type Layout struct {
 	Field
 	size      int
 	alignment int
 	padding   int
 
-	subName      string
 	subKind      AggregateKind
 	subAggregate []Layout
 }
@@ -35,7 +31,6 @@ type AggregateKind uint
 const (
 	StructKind AggregateKind = iota
 	UnionKind
-	PaddingKind
 )
 
 type Aggregate struct {
@@ -51,30 +46,14 @@ type AggregateMeta struct {
 }
 
 var (
-	ParseError  = errors.New("cannot parse source")
-	SymbolError = errors.New("cannot find symbol")
+	ErrParse  = errors.New("cannot parse source")
+	ErrSymbol = errors.New("cannot find symbol")
 )
-
-// Maybe this should also return a simil struct type containing the fileds and
-// padding, so that the cli can show it later (use charm/lipgloss),
-// could also use it for line diagrams to show padding, fields, byte per byte
-// like in my notepad drawings, ecc.
-//  "github.com/charmbracelet/lipgloss"
-/* func main() {
-  var style = lipgloss.NewStyle().
-    Bold(true).
-    Foreground(lipgloss.Color("#39e75f")).
-    //Background(lipgloss.Color("#7D56F4")).
-    PaddingTop(2).
-    PaddingLeft(4).
-    Width(22)
-  fmt.Println(style.Render("Hello, kitty"))
-}   */
 
 func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 	agg, ok := ctx[name]
 	if !ok {
-		return AggregateMeta{}, fmt.Errorf("%w: %v", SymbolError, name)
+		return AggregateMeta{}, fmt.Errorf("%w: %v", ErrSymbol, name)
 	}
 
 	maxAlign := 0
@@ -100,7 +79,7 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 		// Aggregate case, let's check if this type is defined first
 		fAgg, isAggregate := ctx[field.Type]
 		if !isAggregate {
-			return AggregateMeta{}, fmt.Errorf("%w: %v", SymbolError, name)
+			return AggregateMeta{}, fmt.Errorf("%w: %v", ErrSymbol, name)
 		}
 
 		// If so, let's recursively resolve its alignment/size/padding
@@ -116,11 +95,43 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 	}
 
 	// Second pass: evaluate alignment/size/padding
+
+	// Simplified case: union - info on the padding formula later
+	if agg.Kind == UnionKind {
+		maxIdx := -1
+		for idx, curr := range resMetas {
+			if curr.Size > maxIdx {
+				maxIdx = idx
+			}
+		}
+		maxElem := resMetas[maxIdx]
+		maxSize := maxElem.Size
+		padding := (maxAlign - (maxSize % maxAlign)) % maxAlign
+
+		return AggregateMeta{
+			Size:      maxElem.Size + padding,
+			Alignment: maxAlign,
+			Layout: []Layout{{
+				Field:   agg.Fields[maxIdx],
+				padding: padding,
+			}},
+		}, nil
+	}
+
 	totSize := 0
 	for idx, field := range agg.Fields {
 		curr := resMetas[idx]
 		totSize += curr.Size
 
+		// this is the important part: how does one evaluate the correct padding?
+		// once the alignment is computed for the aggregate, then there are two
+		// cases:
+		// - if the field is not the last one, padding must be added if the next
+		// field would be misaligned with reference to its natural alignment, if
+		// put directly into the next byte after the current field.
+		// - if the field is the last one, padding must be added in such a way
+		// that, if another aggregate of the same type would be lied next to this
+		// one, it would be aligned too.
 		padding := 0
 		if idx == len(agg.Fields)-1 {
 			padding = (maxAlign - (totSize % maxAlign)) % maxAlign
@@ -135,6 +146,11 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 			size:      curr.Size,
 			alignment: curr.Alignment,
 			padding:   padding,
+		}
+
+		if curr.Layout != nil {
+			// this is an aggregate field, let's add some metadata to the Layout
+			layouts[idx].subAggregate = curr.Layout
 		}
 	}
 
@@ -162,7 +178,7 @@ func ExtractAggregates(fname, cont string) (Context, error) {
 
 	ast, err := cc.Parse(config, srcs)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ParseError, err)
+		return nil, fmt.Errorf("%w: %w", ErrParse, err)
 	}
 
 	// StructDeclarationList
@@ -211,7 +227,7 @@ func GetSizeAndAlign(typeName string, types []Aggregate) (int, int, error) {
 // TODO
 // All types get the complete str as type so that the cli can show it
 // - [ ] handle func pointers
-// - [ ] handle struct types
+// - [ ] handle struct types (struct x, union y as fields)
 // - [ ] handle array types
 // - [ ] handle pointer types
 // - [ ] handle qualified types (e.g. unsigned long, volatile short)
