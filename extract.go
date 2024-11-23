@@ -18,11 +18,9 @@ type Field struct {
 
 type Layout struct {
 	Field
-	size      int
-	alignment int
-	padding   int
-
-	subKind      AggregateKind
+	size         int
+	alignment    int
+	padding      int
 	subAggregate []Layout
 }
 
