@@ -148,16 +148,16 @@ func TestComputeMeta(t *testing.T) {
 			`#include <stdint.h> 
 			struct a1 { int32_t a; int8_t b; int16_t c; int32_t d; int64_t e; };`,
 			"a1",
-			8,
 			24,
+			8,
 			nil,
 		},
 		{
 			`#include <stdint.h> 
 			struct a1 { int32_t a; int64_t b; int8_t c; int32_t d; };`,
 			"a1",
-			8,
 			24,
+			8,
 			nil,
 		},
 	}
@@ -171,8 +171,9 @@ func TestComputeMeta(t *testing.T) {
 
 		meta, err := structs.ResolveMeta(testCase.name)
 		if err != nil {
-			if errors.Is(err, testCase.expectedErr) {
+			if !errors.Is(err, testCase.expectedErr) {
 				t.Errorf("Expected error %v: got %v", testCase.expectedErr, err)
+				t.Errorf("%v", meta)
 			}
 			continue
 		}
@@ -182,7 +183,7 @@ func TestComputeMeta(t *testing.T) {
 		}
 
 		if meta.Alignment != testCase.expAlig {
-			t.Errorf("Expected size: %d: got: %d", testCase.expAlig, meta.Alignment)
+			t.Errorf("Expected alignment: %d: got: %d", testCase.expAlig, meta.Alignment)
 		}
 
 		// add layout checks later
