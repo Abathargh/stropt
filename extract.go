@@ -78,7 +78,7 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 	}
 
 	maxAlign := 0
-	resMetas := make([]AggregateMeta, len(agg.Fields))
+	resMetas := make([]AggregateMeta, 0, len(agg.Fields))
 	layouts := make([]Layout, len(agg.Fields))
 
 	// First pass: evaluate the max alignment in the struct
@@ -93,8 +93,8 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 
 			if fMeta.Alignment > maxAlign {
 				maxAlign = fMeta.Alignment
-				continue
 			}
+			continue
 		}
 
 		// Aggregate case, let's check if this type is defined first
@@ -115,40 +115,37 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 		}
 	}
 
-
 	// Second pass: evaluate alignment/size/padding
 	totSize := 0
 	for idx, field := range agg.Fields {
 		curr := resMetas[idx]
 		totSize += curr.Size
 
-		if idx != len(agg.Fields)-1 {
-			next := resMetas[idx+1]
-			if thresh := (maxAlign - (totSize % maxAlign)) % next.Alignment; thresh != 0 {
-				// got some padding to add
-				totSize += thresh
-				layouts[idx] = Layout{
-					Field:     field,
-					size:      curr.Size,
-					alignment: curr.Alignment,
-					padding:   thresh,
-				}
-			}
+		padding := 0
+		if idx == len(agg.Fields)-1 {
+			padding = (maxAlign - (totSize % maxAlign)) % maxAlign
 		} else {
-			// need to pad for max_align - totSize % curr?
+			next := resMetas[idx+1]
+			padding = (maxAlign - (totSize % maxAlign)) % next.Alignment
+		}
 
+		totSize += padding
+		layouts[idx] = Layout{
+			Field:     field,
+			size:      curr.Size,
+			alignment: curr.Alignment,
+			padding:   padding,
 		}
 	}
 
 	return AggregateMeta{
 		Size:      totSize,
 		Alignment: maxAlign,
-		Layout:    resMetas,
+		Layout:    layouts,
 	}, nil
-
 }
 
-func ExtractAggregates(fname, cont string) ([]Aggregate, error) {
+func ExtractAggregates(fname, cont string) (Context, error) {
 	// TODO: add possible way of selecting the compiler (e.g. avr, arm-none..)
 	// TODO: add possible flags to be passed down
 	config, err := cc.NewConfig(runtime.GOOS, runtime.GOARCH)
@@ -174,7 +171,7 @@ func ExtractAggregates(fname, cont string) ([]Aggregate, error) {
 	//			StructDeclarator -> identifier
 	//	StructDeclarationList -> next item in structdecl
 
-	var aggregates []Aggregate
+	var ctx = make(Context)
 
 	for name, node := range ast.Scope.Nodes {
 		switch def := node[0].(type) {
@@ -197,10 +194,10 @@ func ExtractAggregates(fname, cont string) ([]Aggregate, error) {
 				currStruct.Kind = UnionKind
 			}
 
-			aggregates = append(aggregates, currStruct)
+			ctx[name] = currStruct
 		}
 	}
-	return aggregates, nil
+	return ctx, nil
 }
 
 func GetSizeAndAlign(typeName string, types []Aggregate) (int, int, error) {
@@ -225,6 +222,8 @@ func getType(declList *cc.StructDeclarationList) string {
 	return "<empty>"
 }
 
+// TODO
+// - [ ] non typedef structs names should be "struct ...", likewise for unions
 func getField(declr *cc.StructDeclarator) string {
 	return declr.Declarator.DirectDeclarator.Token.SrcStr()
 }
