@@ -42,7 +42,7 @@ func TestStructBasicTypes(t *testing.T) {
 			"struct test_ptr { int * a; void (*fp)(float, double); int arr[100]; };",
 			Context{
 				"struct test_ptr": {
-					Name: "test_ptr",
+					Name: "struct test_ptr",
 					Fields: []Field{
 						{Name: "a", Type: "int *", IsPointer: true},
 						{Name: "fp", Type: "void (*)(float, double)", IsPointer: true},
@@ -182,7 +182,7 @@ func TestComputeMeta(t *testing.T) {
 		{
 			`#include <stdint.h> 
 			struct a1 { int32_t a; int8_t b; int16_t c; int32_t d; int64_t e; };`,
-			"a1",
+			"struct a1",
 			24,
 			8,
 			nil,

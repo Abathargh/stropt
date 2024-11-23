@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 
 	"modernc.org/cc/v4"
 )
@@ -192,23 +193,30 @@ func ExtractAggregates(fname, cont string) (Context, error) {
 		// do case base type? does it make sense? typedefs to base type dont
 		// get parsed well
 		case *cc.StructOrUnionSpecifier:
-			currStruct := Aggregate{Name: name}
+			currStruct := Aggregate{}
 			curr := def.StructDeclarationList
 			for ; curr != nil; curr = curr.StructDeclarationList {
 				declList := curr.StructDeclaration
 				entryType := getType(curr)
-				entryName := getField(declList.StructDeclaratorList.StructDeclarator)
+				entryName, isPtr := getField(
+					declList.StructDeclaratorList.StructDeclarator,
+				)
+
 				currStruct.Fields = append(currStruct.Fields, Field{
-					Name: entryName,
-					Type: entryType,
+					Name:      entryName,
+					Type:      entryType,
+					IsPointer: isPtr,
 				})
 			}
 
+			qualName := "struct " + name
 			if isUnion(def.StructOrUnion) {
 				currStruct.Kind = UnionKind
+				qualName = "union " + name
 			}
 
-			ctx[name] = currStruct
+			currStruct.Name = qualName
+			ctx[qualName] = currStruct
 		}
 	}
 	return ctx, nil
@@ -224,22 +232,76 @@ func GetSizeAndAlign(typeName string, types []Aggregate) (int, int, error) {
 
 // TODO
 // All types get the complete str as type so that the cli can show it
-// - [ ] handle func pointers
-// - [ ] handle struct types (struct x, union y as fields)
+// - [x] non typedef structs names should be "struct ...", likewise for unions
+// - [x] handle pointer types
 // - [ ] handle array types
-// - [ ] handle pointer types
-// - [ ] handle qualified types (e.g. unsigned long, volatile short)
+// - [x] handle qualified types (e.g. unsigned long, volatile short)
+// - [ ] handle func pointers
 func getType(declList *cc.StructDeclarationList) string {
-	if declList != nil && declList.StructDeclaration.SpecifierQualifierList != nil {
-		return declList.StructDeclaration.SpecifierQualifierList.TypeSpecifier.Token.SrcStr()
+	if declList == nil || declList.StructDeclaration == nil ||
+		declList.StructDeclaration.SpecifierQualifierList == nil {
+		return "error"
 	}
-	return "<empty>"
+
+	specQualList := declList.StructDeclaration.SpecifierQualifierList
+	typeSpec := specQualList.TypeSpecifier
+
+	baseType := ""
+
+	switch {
+	case typeSpec != nil && typeSpec.StructOrUnionSpecifier != nil:
+		sou := typeSpec.StructOrUnionSpecifier
+		baseType = sou.StructOrUnion.Token.SrcStr() + " " + sou.Token.SrcStr()
+	}
+
+	declr := declList.StructDeclaration.StructDeclaratorList.StructDeclarator
+	return extractQualifier(specQualList) + getPtrQual(declr) + baseType
 }
 
-// TODO
-// - [ ] non typedef structs names should be "struct ...", likewise for unions
-func getField(declr *cc.StructDeclarator) string {
-	return declr.Declarator.DirectDeclarator.Token.SrcStr()
+func extractQualifier(specQualList *cc.SpecifierQualifierList) string {
+	var builder strings.Builder
+	switch {
+	case specQualList.TypeSpecifier != nil:
+		builder.WriteString(specQualList.TypeSpecifier.Token.SrcStr())
+	case specQualList.TypeQualifier != nil:
+		builder.WriteString(specQualList.TypeQualifier.Token.SrcStr())
+	case specQualList.TypeQualifier == nil && specQualList.TypeSpecifier == nil:
+		return ""
+	}
+
+	curr := specQualList.SpecifierQualifierList
+	for ; curr != nil; curr = curr.SpecifierQualifierList {
+		switch {
+		case curr.TypeQualifier != nil:
+			builder.WriteRune(' ')
+			builder.WriteString(curr.TypeQualifier.Token.SrcStr())
+		case curr.TypeSpecifier != nil:
+			builder.WriteRune(' ')
+			builder.WriteString(curr.TypeSpecifier.Token.SrcStr())
+		}
+	}
+	return builder.String()
+}
+
+func getPtrQual(declr *cc.StructDeclarator) string {
+	decl := declr.Declarator
+	switch {
+	case decl.Pointer == nil:
+		return ""
+	case decl.Pointer != nil && decl.Pointer.TypeQualifiers != nil:
+		return " * const"
+	default:
+		return " *"
+	}
+}
+
+func getField(declr *cc.StructDeclarator) (string, bool) {
+	decl := declr.Declarator
+	isPtr := false
+	if decl.Pointer != nil {
+		isPtr = true
+	}
+	return decl.DirectDeclarator.Token.SrcStr(), isPtr
 }
 
 func isUnion(sou *cc.StructOrUnion) bool {
