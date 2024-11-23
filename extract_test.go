@@ -8,13 +8,13 @@ import (
 func TestStructBasicTypes(t *testing.T) {
 	testCases := []struct {
 		test        string
-		expected    []Aggregate
+		expected    Context
 		expectedErr error
 	}{
 		{
 			"#include <stdint.h> struct test_struct { uint64_t a; };",
-			[]Aggregate{
-				{
+			Context{
+				"test_struct": {
 					Name:   "test_struct",
 					Fields: []Field{{Name: "a", Type: "uint64_t", IsPointer: false}},
 					Kind:   StructKind,
@@ -24,8 +24,8 @@ func TestStructBasicTypes(t *testing.T) {
 		},
 		{
 			"struct test_mul { int a; float b; double d; long long l; };",
-			[]Aggregate{
-				{
+			Context{
+				"test_mul": {
 					Name: "test_mul",
 					Fields: []Field{
 						{Name: "a", Type: "int", IsPointer: false},
@@ -40,8 +40,8 @@ func TestStructBasicTypes(t *testing.T) {
 		},
 		{
 			"struct test_ptr { int * a; void (*fp)(float, double); int arr[100]; };",
-			[]Aggregate{
-				{
+			Context{
+				"test_ptr": {
 					Name: "test_ptr",
 					Fields: []Field{
 						{Name: "a", Type: "int", IsPointer: true},
@@ -56,8 +56,8 @@ func TestStructBasicTypes(t *testing.T) {
 		{
 			`#include <stdint.h> typedef union {float f; int i; uint64_t ui; } un; 
 			struct test_ptr { int * a; void (*fp)(float, double); };`,
-			[]Aggregate{
-				{
+			Context{
+				"un": {
 					Name: "un",
 					Fields: []Field{
 						{Name: "f", Type: "float", IsPointer: false},
@@ -66,7 +66,7 @@ func TestStructBasicTypes(t *testing.T) {
 					},
 					Kind: UnionKind,
 				},
-				{
+				"test_ptr": {
 					Name: "test_ptr",
 					Fields: []Field{
 						{Name: "a", Type: "int*", IsPointer: true},
@@ -80,8 +80,8 @@ func TestStructBasicTypes(t *testing.T) {
 		},
 		{
 			`struct test_ptr { const int * a; const int * const b; };`,
-			[]Aggregate{
-				{
+			Context{
+				"test_ptr": {
 					Name: "test_ptr",
 					Fields: []Field{
 						{Name: "a", Type: "const int *", IsPointer: true},
@@ -104,8 +104,8 @@ func TestStructBasicTypes(t *testing.T) {
 			continue
 		}
 
-		for idx, agg := range structs {
-			exp := testCase.expected[idx]
+		for name, agg := range structs {
+			exp := testCase.expected[name]
 			if agg.Name != exp.Name {
 				t.Errorf("Expected aggregate name %q: got %q", exp.Name, agg.Name)
 			}
@@ -138,10 +138,29 @@ func TestStructBasicTypes(t *testing.T) {
 
 func TestComputeMeta(t *testing.T) {
 	testCases := []struct {
-		test              string
-		expectedSize      int
-		expectedAlignment int
-	}{}
+		test        string
+		name        string
+		expSize     int
+		expAlig     int
+		expectedErr error
+	}{
+		{
+			`#include <stdint.h> 
+			struct a1 { int32_t a; int8_t b; int16_t c; int32_t d; int64_t e; };`,
+			"a1",
+			8,
+			24,
+			nil,
+		},
+		{
+			`#include <stdint.h> 
+			struct a1 { int32_t a; int64_t b; int8_t c; int32_t d; };`,
+			"a1",
+			8,
+			24,
+			nil,
+		},
+	}
 
 	for _, testCase := range testCases {
 		structs, err := ExtractAggregates("", testCase.test)
@@ -150,7 +169,22 @@ func TestComputeMeta(t *testing.T) {
 			continue
 		}
 
-		n 
+		meta, err := structs.ResolveMeta(testCase.name)
+		if err != nil {
+			if errors.Is(err, testCase.expectedErr) {
+				t.Errorf("Expected error %v: got %v", testCase.expectedErr, err)
+			}
+			continue
+		}
 
+		if meta.Size != testCase.expSize {
+			t.Errorf("Expected size: %d: got: %d", testCase.expSize, meta.Size)
+		}
+
+		if meta.Alignment != testCase.expAlig {
+			t.Errorf("Expected size: %d: got: %d", testCase.expAlig, meta.Alignment)
+		}
+
+		// add layout checks later
 	}
 }
