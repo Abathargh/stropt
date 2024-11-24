@@ -30,6 +30,7 @@ type AggregateKind uint
 const (
 	StructKind AggregateKind = iota
 	UnionKind
+	ArrayKind
 )
 
 type Aggregate struct {
@@ -49,18 +50,11 @@ var (
 	ErrSymbol = errors.New("cannot find symbol")
 )
 
-func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
-	agg, ok := ctx[name]
-	if !ok {
-		return AggregateMeta{}, fmt.Errorf("%w: %v", ErrSymbol, name)
-	}
-
+func (ctx Context) firstPass(fields []Field) ([]AggregateMeta, int, error) {
 	maxAlign := 0
-	resMetas := make([]AggregateMeta, 0, len(agg.Fields))
-	layouts := make([]Layout, len(agg.Fields))
-
+	resMetas := make([]AggregateMeta, 0, len(fields))
 	// First pass: evaluate the max alignment in the struct
-	for _, field := range agg.Fields {
+	for _, field := range fields {
 		// Base type case, just extract and cache locally
 		fMeta, isBase := TypeMap[field.Type]
 		if isBase {
@@ -75,16 +69,29 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 			continue
 		}
 
+		// Pointer value: return system word align/size
+		if field.IsPointer {
+			resMetas = append(resMetas, AggregateMeta{
+				Size:      pointerSize,
+				Alignment: pointerAlign,
+			})
+
+			if pointerAlign > maxAlign {
+				maxAlign = pointerAlign
+			}
+			continue
+		}
+
 		// Aggregate case, let's check if this type is defined first
 		fAgg, isAggregate := ctx[field.Type]
 		if !isAggregate {
-			return AggregateMeta{}, fmt.Errorf("%w: %v", ErrSymbol, name)
+			return nil, -1, ErrSymbol
 		}
 
 		// If so, let's recursively resolve its alignment/size/padding
 		subMeta, err := ctx.ResolveMeta(fAgg.Name)
 		if err != nil {
-			return AggregateMeta{}, err
+			return nil, -1, err
 		}
 
 		resMetas = append(resMetas, subMeta)
@@ -92,6 +99,21 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 			maxAlign = fMeta.Alignment
 		}
 	}
+	return resMetas, maxAlign, nil
+}
+
+func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
+	agg, ok := ctx[name]
+	if !ok {
+		return AggregateMeta{}, fmt.Errorf("%w: %v", ErrSymbol, name)
+	}
+
+	resMetas, maxAlign, err := ctx.firstPass(agg.Fields)
+	if err != nil {
+		return AggregateMeta{}, fmt.Errorf("name %s: %w", name, err)
+	}
+
+	layouts := make([]Layout, len(agg.Fields))
 
 	// Second pass: evaluate alignment/size/padding
 
@@ -116,6 +138,9 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 			}},
 		}, nil
 	}
+
+	// Other simplified case: array member
+	// Other simplified case: pointer (fp, normal)
 
 	totSize := 0
 	for idx, field := range agg.Fields {
@@ -222,18 +247,11 @@ func ExtractAggregates(fname, cont string) (Context, error) {
 	return ctx, nil
 }
 
-func GetSizeAndAlign(typeName string, types []Aggregate) (int, int, error) {
-	meta, ok := TypeMap[typeName]
-	if ok {
-		return meta.Alignment, meta.Size, nil
-	}
-	return -1, -1, nil
-}
-
 // TODO
 // All types get the complete str as type so that the cli can show it
 // - [x] non typedef structs names should be "struct ...", likewise for unions
 // - [x] handle pointer types
+// - [x] handle multiple pointer types
 // - [ ] handle array types
 // - [x] handle qualified types (e.g. unsigned long, volatile short)
 // - [ ] handle func pointers
