@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"modernc.org/cc/v4"
@@ -11,10 +12,20 @@ import (
 
 type Context map[string]Aggregate
 
+type PrimitiveKind uint
+
+const (
+	BasePKind PrimitiveKind = iota
+	PointerPKind
+	ArrayPKind
+)
+
 type Field struct {
 	Name      string
 	Type      string
-	IsPointer bool // if this is true do not need to do size/alignment resolution since it is just a pointer
+	ArraySize int
+	Kind      PrimitiveKind
+	// if this is true do not need to do size/alignment resolution since it is just a pointer
 }
 
 type Layout struct {
@@ -30,7 +41,6 @@ type AggregateKind uint
 const (
 	StructKind AggregateKind = iota
 	UnionKind
-	ArrayKind
 )
 
 type Aggregate struct {
@@ -58,8 +68,13 @@ func (ctx Context) firstPass(fields []Field) ([]AggregateMeta, int, error) {
 		// Base type case, just extract and cache locally
 		fMeta, isBase := TypeMap[field.Type]
 		if isBase {
+			size := fMeta.Size
+			if field.Kind == ArrayPKind {
+				size *= field.ArraySize
+			}
+
 			resMetas = append(resMetas, AggregateMeta{
-				Size:      fMeta.Size,
+				Size:      size,
 				Alignment: fMeta.Alignment,
 			})
 
@@ -70,7 +85,7 @@ func (ctx Context) firstPass(fields []Field) ([]AggregateMeta, int, error) {
 		}
 
 		// Pointer value: return system word align/size
-		if field.IsPointer {
+		if field.Kind == PointerPKind {
 			resMetas = append(resMetas, AggregateMeta{
 				Size:      pointerSize,
 				Alignment: pointerAlign,
@@ -82,16 +97,14 @@ func (ctx Context) firstPass(fields []Field) ([]AggregateMeta, int, error) {
 			continue
 		}
 
-		// Aggregate case, let's check if this type is defined first
-		fAgg, isAggregate := ctx[field.Type]
-		if !isAggregate {
-			return nil, -1, ErrSymbol
-		}
-
-		// If so, let's recursively resolve its alignment/size/padding
-		subMeta, err := ctx.ResolveMeta(fAgg.Name)
+		// Aggregate case
+		subMeta, err := ctx.resolveAggregate(field.Type)
 		if err != nil {
 			return nil, -1, err
+		}
+
+		if field.Kind == ArrayPKind {
+			subMeta.Size *= field.ArraySize
 		}
 
 		resMetas = append(resMetas, subMeta)
@@ -100,6 +113,21 @@ func (ctx Context) firstPass(fields []Field) ([]AggregateMeta, int, error) {
 		}
 	}
 	return resMetas, maxAlign, nil
+}
+
+func (ctx Context) resolveAggregate(aggType string) (AggregateMeta, error) {
+	// Let us check if this type is defined first
+	fAgg, isAggregate := ctx[aggType]
+	if !isAggregate {
+		return AggregateMeta{}, ErrSymbol
+	}
+
+	// If so, let us recursively resolve its alignment/size/padding
+	subMeta, err := ctx.ResolveMeta(fAgg.Name)
+	if err != nil {
+		return AggregateMeta{}, err
+	}
+	return subMeta, nil
 }
 
 func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
@@ -205,12 +233,6 @@ func ExtractAggregates(fname, cont string) (Context, error) {
 		return nil, fmt.Errorf("%w: %w", ErrParse, err)
 	}
 
-	// StructDeclarationList
-	// 	StructDeclaration -> type
-	//		StructDeclaratorList
-	//			StructDeclarator -> identifier
-	//	StructDeclarationList -> next item in structdecl
-
 	var ctx = make(Context)
 
 	for name, node := range ast.Scope.Nodes {
@@ -222,22 +244,39 @@ func ExtractAggregates(fname, cont string) (Context, error) {
 			curr := def.StructDeclarationList
 			for ; curr != nil; curr = curr.StructDeclarationList {
 				declList := curr.StructDeclaration
+				declarator := declList.StructDeclaratorList.StructDeclarator
+
 				entryType := getType(curr)
-				entryName, isPtr := getField(
-					declList.StructDeclaratorList.StructDeclarator,
-				)
+				entryName, isPtr := getField(declarator)
+				arraySize, isArr := isArray(declarator)
+
+				var kind PrimitiveKind
+				switch {
+				case isPtr:
+					kind = PointerPKind
+				case isArr:
+					kind = ArrayPKind
+				default:
+					kind = BasePKind
+				}
 
 				currStruct.Fields = append(currStruct.Fields, Field{
 					Name:      entryName,
 					Type:      entryType,
-					IsPointer: isPtr,
+					ArraySize: arraySize,
+					Kind:      kind,
 				})
 			}
 
-			qualName := "struct " + name
-			if isUnion(def.StructOrUnion) {
+			var qualName string
+
+			switch {
+			case isUnion(def.StructOrUnion):
 				currStruct.Kind = UnionKind
 				qualName = "union " + name
+			default:
+				currStruct.Kind = StructKind
+				qualName = "struct " + name
 			}
 
 			currStruct.Name = qualName
@@ -250,9 +289,13 @@ func ExtractAggregates(fname, cont string) (Context, error) {
 // TODO
 // All types get the complete str as type so that the cli can show it
 // - [x] non typedef structs names should be "struct ...", likewise for unions
+//   - [x] typedefed anonymous structs/union (e.g. typedef struct { ... } S; )
+//
 // - [x] handle pointer types
 // - [x] handle multiple pointer types
-// - [ ] handle array types
+// - [x] handle array types
+//   - [x] handle struct array types (struct x arr[10])
+//
 // - [x] handle qualified types (e.g. unsigned long, volatile short)
 // - [ ] handle func pointers
 func getType(declList *cc.StructDeclarationList) string {
@@ -304,12 +347,12 @@ func extractQualifier(specQualList *cc.SpecifierQualifierList) string {
 func getPtrQual(declr *cc.StructDeclarator) string {
 	decl := declr.Declarator
 	switch {
-	case decl.Pointer == nil:
-		return ""
+	case decl.Pointer != nil && decl.Pointer.TypeQualifiers == nil:
+		return " *"
 	case decl.Pointer != nil && decl.Pointer.TypeQualifiers != nil:
 		return " * const"
 	default:
-		return " *"
+		return ""
 	}
 }
 
@@ -319,9 +362,36 @@ func getField(declr *cc.StructDeclarator) (string, bool) {
 	if decl.Pointer != nil {
 		isPtr = true
 	}
-	return decl.DirectDeclarator.Token.SrcStr(), isPtr
+
+	pre := decl.DirectDeclarator
+	for inner := pre.DirectDeclarator; pre != nil && inner != nil; {
+		pre = inner
+		inner = inner.DirectDeclarator
+	}
+
+	return pre.Token.SrcStr(), isPtr
 }
 
 func isUnion(sou *cc.StructOrUnion) bool {
 	return sou.Token.SrcStr() == "union"
+}
+
+func isArray(declr *cc.StructDeclarator) (int, bool) {
+	dir := declr.Declarator.DirectDeclarator
+	if dir.Token.SrcStr() == "[" && dir.Token2.SrcStr() == "]" {
+		aExpr := dir.AssignmentExpression
+		if aExpr == nil {
+			return -1, false
+		}
+
+		switch expr := aExpr.(type) {
+		case *cc.PrimaryExpression:
+			size, err := strconv.ParseInt(expr.Token.SrcStr(), 10, 64)
+			if err != nil {
+				return -1, false
+			}
+			return int(size), true
+		}
+	}
+	return -1, false
 }
