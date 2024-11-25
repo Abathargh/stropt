@@ -16,7 +16,7 @@ func TestStructBasicTypes(t *testing.T) {
 			Context{
 				"struct test_struct": {
 					Name:   "struct test_struct",
-					Fields: []Field{{Name: "a", Type: "uint64_t", IsPointer: false}},
+					Fields: []Field{{Name: "a", Type: "uint64_t", Kind: BasePKind}},
 					Kind:   StructKind,
 				},
 			},
@@ -28,10 +28,10 @@ func TestStructBasicTypes(t *testing.T) {
 				"struct test_mul": {
 					Name: "struct test_mul",
 					Fields: []Field{
-						{Name: "a", Type: "int", IsPointer: false},
-						{Name: "b", Type: "float", IsPointer: false},
-						{Name: "d", Type: "double", IsPointer: false},
-						{Name: "l", Type: "long long", IsPointer: false},
+						{Name: "a", Type: "int", Kind: BasePKind},
+						{Name: "b", Type: "float", Kind: BasePKind},
+						{Name: "d", Type: "double", Kind: BasePKind},
+						{Name: "l", Type: "long long", Kind: BasePKind},
 					},
 					Kind: StructKind,
 				},
@@ -44,9 +44,9 @@ func TestStructBasicTypes(t *testing.T) {
 				"struct test_ptr": {
 					Name: "struct test_ptr",
 					Fields: []Field{
-						{Name: "a", Type: "int *", IsPointer: true},
-						{Name: "fp", Type: "void (*)(float, double)", IsPointer: true},
-						{Name: "arr", Type: "int[100]", IsPointer: false},
+						{Name: "a", Type: "int *", Kind: PointerPKind},
+						{Name: "fp", Type: "void (*)(float, double)", Kind: PointerPKind},
+						{Name: "arr", Type: "int[100]", Kind: ArrayPKind},
 					},
 					Kind: StructKind,
 				},
@@ -60,26 +60,26 @@ func TestStructBasicTypes(t *testing.T) {
 				"un": {
 					Name: "un",
 					Fields: []Field{
-						{Name: "f", Type: "float", IsPointer: false},
-						{Name: "i", Type: "int", IsPointer: false},
-						{Name: "ui", Type: "uint64_t", IsPointer: false},
+						{Name: "f", Type: "float", Kind: BasePKind},
+						{Name: "i", Type: "int", Kind: BasePKind},
+						{Name: "ui", Type: "uint64_t", Kind: BasePKind},
 					},
 					Kind: UnionKind,
 				},
 				"struct un": {
 					Name: "struct un",
 					Fields: []Field{
-						{Name: "f", Type: "float", IsPointer: false},
-						{Name: "i", Type: "int", IsPointer: false},
-						{Name: "ui", Type: "uint64_t", IsPointer: false},
+						{Name: "f", Type: "float", Kind: BasePKind},
+						{Name: "i", Type: "int", Kind: BasePKind},
+						{Name: "ui", Type: "uint64_t", Kind: BasePKind},
 					},
 					Kind: UnionKind,
 				},
 				"struct test_ptr": {
 					Name: "struct test_ptr",
 					Fields: []Field{
-						{Name: "a", Type: "int *", IsPointer: true},
-						{Name: "fp", Type: "void (*)(float, double)", IsPointer: true},
+						{Name: "a", Type: "int *", Kind: PointerPKind},
+						{Name: "fp", Type: "void (*)(float, double)", Kind: PointerPKind},
 					},
 					Kind: StructKind,
 				},
@@ -92,8 +92,8 @@ func TestStructBasicTypes(t *testing.T) {
 				"struct test_ptr": {
 					Name: "struct test_ptr",
 					Fields: []Field{
-						{Name: "a", Type: "const int *", IsPointer: true},
-						{Name: "b", Type: "const int * const", IsPointer: true},
+						{Name: "a", Type: "const int *", Kind: PointerPKind},
+						{Name: "b", Type: "const int * const", Kind: PointerPKind},
 					},
 					Kind: StructKind,
 				},
@@ -107,15 +107,15 @@ func TestStructBasicTypes(t *testing.T) {
 				"struct inner": {
 					Name: "struct inner",
 					Fields: []Field{
-						{Name: "a", Type: "int", IsPointer: false},
+						{Name: "a", Type: "int", Kind: BasePKind},
 					},
 					Kind: StructKind,
 				},
 				"struct test_inner": {
 					Name: "struct test_inner",
 					Fields: []Field{
-						{Name: "a1", Type: "int", IsPointer: false},
-						{Name: "a2", Type: "struct inner", IsPointer: false},
+						{Name: "a1", Type: "int", Kind: BasePKind},
+						{Name: "a2", Type: "struct inner", Kind: BasePKind},
 					},
 					Kind: StructKind,
 				},
@@ -162,9 +162,9 @@ func TestStructBasicTypes(t *testing.T) {
 				if aType.Type != expField.Type {
 					t.Errorf("Expected field type %q: got %q", expField.Type, aType.Type)
 				}
-				if aType.IsPointer != expField.IsPointer {
-					t.Errorf("Expected ptr: %v: got: %v", expField.IsPointer,
-						aType.IsPointer)
+				if aType.Kind != expField.Kind {
+					t.Errorf("Expected ptr: %v: got: %v", expField.Kind,
+						aType.Kind)
 				}
 			}
 		}
@@ -202,6 +202,28 @@ func TestComputeMeta(t *testing.T) {
 			"struct s1",
 			12,
 			4,
+			nil,
+		},
+		{
+			"struct p1 { char * str; int a; };",
+			"struct p1",
+			16,
+			8,
+			nil,
+		},
+		{
+			"struct p1 { char * str; int a; float f[100]; };",
+			"struct p1",
+			416,
+			8,
+			nil,
+		},
+		{
+			`typedef struct T { short b; char c; } T;
+			struct p1 { char * str; int a; struct T f[100]; };`,
+			"struct p1",
+			416,
+			8,
 			nil,
 		},
 	}
