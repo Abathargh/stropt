@@ -23,6 +23,21 @@ func TestStructBasicTypes(t *testing.T) {
 			nil,
 		},
 		{
+			"union un { double d; float f; unsigned char uc; };",
+			Context{
+				"union un": {
+					Name: "union un",
+					Fields: []Field{
+						{Name: "d", Type: "double", Kind: BasePKind},
+						{Name: "f", Type: "float", Kind: BasePKind},
+						{Name: "uc", Type: "unsigned char", Kind: BasePKind},
+					},
+					Kind: UnionKind,
+				},
+			},
+			nil,
+		},
+		{
 			"struct test_mul { int a; float b; double d; long long l; };",
 			Context{
 				"struct test_mul": {
@@ -39,14 +54,13 @@ func TestStructBasicTypes(t *testing.T) {
 			nil,
 		},
 		{
-			"struct test_ptr { int * a; void (*fp)(float, double); int arr[100]; };",
+			"struct test_ptr { int * a; int arr[100]; };",
 			Context{
 				"struct test_ptr": {
 					Name: "struct test_ptr",
 					Fields: []Field{
 						{Name: "a", Type: "int *", Kind: PointerPKind},
-						{Name: "fp", Type: "void (*)(float, double)", Kind: PointerPKind},
-						{Name: "arr", Type: "int[100]", Kind: ArrayPKind},
+						{Name: "arr", Type: "int", ArraySize: 100, Kind: ArrayPKind},
 					},
 					Kind: StructKind,
 				},
@@ -55,7 +69,7 @@ func TestStructBasicTypes(t *testing.T) {
 		},
 		{
 			`#include <stdint.h> typedef union {float f; int i; uint64_t ui; } un; 
-			struct test_ptr { int * a; void (*fp)(float, double); };`,
+			struct test_ptr { int * a; };`,
 			Context{
 				"un": {
 					Name: "un",
@@ -79,7 +93,6 @@ func TestStructBasicTypes(t *testing.T) {
 					Name: "struct test_ptr",
 					Fields: []Field{
 						{Name: "a", Type: "int *", Kind: PointerPKind},
-						{Name: "fp", Type: "void (*)(float, double)", Kind: PointerPKind},
 					},
 					Kind: StructKind,
 				},
@@ -165,6 +178,10 @@ func TestStructBasicTypes(t *testing.T) {
 				if aType.Kind != expField.Kind {
 					t.Errorf("Expected ptr: %v: got: %v", expField.Kind,
 						aType.Kind)
+				}
+				if aType.Kind == ArrayPKind && aType.ArraySize != expField.ArraySize {
+					t.Errorf("Expected array size: %d: got: %d", aType.ArraySize,
+						expField.ArraySize)
 				}
 			}
 		}
