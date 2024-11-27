@@ -1,22 +1,15 @@
 package main
 
 // TODOs
-// - show struct fields meta? Like for each substruct field where padding is
-// located -> this could easily be obtained by internally doing
-// ctx.ResolveMeta for the inner type
-// - by specifying `-table`, show it, otherwise only print size/align/pad
 // - by specifying `-graph`, show the struct layout with padding blocks
-// - by specifying `-sub` print the sub-aggregates metadata too (different style?)
 // - add ptr size/align, word size/align, short size/align etc. flags
 // - add specific known combinations of the above (e.g. avr => 16bit int, alugn 1)
 // - add support for function pointers parsing
-// - remove log.Fatal/panics
 // - test as wasm app
 
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"runtime"
 	"runtime/debug"
@@ -45,6 +38,7 @@ If no source code is passed as a string, then it is mandatory to use the
 `
 
 	helpUsage     = "show the help message"
+	bareUsage     = "just print the data without table formatting or graphics"
 	versionUsage  = "print the version for this build"
 	verboseUsage  = "print more information, e.g. sub-aggregate metadata"
 	optimizeUsage = "suggests an optimized layout and shows related statistics"
@@ -68,6 +62,7 @@ func main() {
 
 	var (
 		help     bool
+		bare     bool
 		version  bool
 		verbose  bool
 		optimize bool
@@ -76,13 +71,14 @@ func main() {
 
 	fs := flag.NewFlagSet("stropt", flag.ExitOnError)
 	fs.BoolVar(&help, "help", false, helpUsage)
+	fs.BoolVar(&bare, "bare", false, bareUsage)
 	fs.BoolVar(&version, "version", false, versionUsage)
 	fs.BoolVar(&verbose, "verbose", false, verboseUsage)
 	fs.BoolVar(&optimize, "optimize", false, optimizeUsage)
 	fs.StringVar(&file, "file", "", fileUsage)
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
-		logError("could not parse args: %w", err)
+		logErrorMessage("could not parse args: %s", err)
 	}
 
 	switch {
@@ -99,32 +95,32 @@ func main() {
 	case len(fs.Args()) == 1 && file != "":
 		cont, err := os.ReadFile(file)
 		if err != nil {
-			log.Fatalf("Failed to open file: %v", err)
+			logErrorMessage("Failed to open file: %v", err)
 		}
-		stropt(file, fs.Arg(0), string(cont), verbose, optimize)
+		stropt(file, fs.Arg(0), string(cont), bare, verbose, optimize)
 	case len(fs.Args()) == 2:
-		stropt("", fs.Arg(0), fs.Arg(1), verbose, optimize)
+		stropt("", fs.Arg(0), fs.Arg(1), bare, verbose, optimize)
 	default:
-		logError(nameMessage)
+		logErrorMessage(nameMessage)
 	}
 }
 
-func stropt(fname, aggName, cont string, verbose, optimize bool) {
+func stropt(fname, aggName, cont string, bare, verbose, optimize bool) {
 	aggregates, err := ExtractAggregates(fname, cont)
 	if err != nil {
-		log.Fatal(err)
+		logError(err)
 	}
 
 	meta, err := aggregates.ResolveMeta(aggName)
 	if err != nil {
-		log.Fatal(err)
+		logError(err)
 	}
-	printAggregateMeta(aggName, meta, verbose)
+	printAggregateMeta(aggName, meta, bare, verbose)
 
 	if optimize {
 		optMeta, err := aggregates.Optimize(aggName, meta)
 		if err != nil {
-			log.Fatal(err)
+			logError(err)
 		}
 
 		if optMeta.Size == meta.Size {
@@ -133,29 +129,31 @@ func stropt(fname, aggName, cont string, verbose, optimize bool) {
 		}
 
 		fmt.Println("\nSuggested optimization:")
-		printAggregateMeta(aggName, optMeta, verbose)
+		printAggregateMeta(aggName, optMeta, bare, verbose)
 	}
 }
 
-func printAggregateMeta(name string, meta AggregateMeta, verbose bool) {
-	var headerStyle = lipgloss.NewStyle().
-		Bold(true).
-		Width(15).
-		Foreground(lipgloss.Color("#ececec")).
-		Align(lipgloss.Center)
+var (
+	headerStyle = lipgloss.NewStyle().
+			Bold(true).
+			Width(15).
+			Foreground(lipgloss.Color("#ececec")).
+			Align(lipgloss.Center)
 
-	var structStyle = lipgloss.NewStyle().
-		Bold(true).
-		Width(15).
-		Foreground(lipgloss.Color("#aeaeae")).
-		Align(lipgloss.Center)
+	structStyle = lipgloss.NewStyle().
+			Bold(true).
+			Width(15).
+			Foreground(lipgloss.Color("#aeaeae")).
+			Align(lipgloss.Center)
 
-	var rowStyle = lipgloss.NewStyle().
-		Bold(false).
-		Width(15).
-		Foreground(lipgloss.Color("#aeaeae")).
-		Align(lipgloss.Center)
+	rowStyle = lipgloss.NewStyle().
+			Bold(false).
+			Width(15).
+			Foreground(lipgloss.Color("#aeaeae")).
+			Align(lipgloss.Center)
+)
 
+func printAggregateMeta(name string, meta AggregateMeta, bare, verbose bool) {
 	totPadding := 0
 	for _, fLayout := range meta.Layout {
 		totPadding += fLayout.padding
@@ -176,10 +174,7 @@ func printAggregateMeta(name string, meta AggregateMeta, verbose bool) {
 		}).
 		Headers("Type", "Size", "Alignment", "Padding")
 
-	size := strconv.Itoa(meta.Size)
-	align := strconv.Itoa(meta.Alignment)
-	pad := strconv.Itoa(totPadding)
-	t.Row(name, size, align, pad)
+	doPrint(name, meta.Size, meta.Alignment, totPadding, t, bare)
 
 	for _, fLayout := range meta.Layout {
 		size := strconv.Itoa(fLayout.size)
@@ -188,17 +183,32 @@ func printAggregateMeta(name string, meta AggregateMeta, verbose bool) {
 		t.Row(fLayout.Name, size, align, pad)
 
 		if fLayout.subAggregate != nil && verbose {
-			for _, subLayout := range fLayout.subAggregate {
-				size := strconv.Itoa(subLayout.size)
-				align := strconv.Itoa(subLayout.alignment)
-				pad := strconv.Itoa(subLayout.padding)
-				name := fmt.Sprintf("%s::%s", fLayout.Type, subLayout.Name)
+			for _, sub := range fLayout.subAggregate {
+				name := fmt.Sprintf("%s::%s", fLayout.Type, sub.Name)
+				doPrint(name, sub.size, sub.alignment, sub.padding, t, bare)
 				t.Row(name, size, align, pad)
 			}
 		}
 	}
 
-	fmt.Println(t)
+	if !bare {
+		fmt.Println(t)
+	}
+}
+
+func doPrint(name string, size, align, pad int, tab *table.Table, bare bool) {
+	if bare {
+		fmt.Fprintf(
+			os.Stdout, "name: %s, size: %d, alignment: %d, padding: %d\n",
+			name, size, align, pad,
+		)
+		return
+	}
+
+	sizeStr := strconv.Itoa(size)
+	alignStr := strconv.Itoa(align)
+	padStr := strconv.Itoa(pad)
+	tab.Row(name, sizeStr, alignStr, padStr)
 }
 
 func debugVersion() {
@@ -208,13 +218,13 @@ func debugVersion() {
 	// Open the C file.
 	f, err := os.Open(fn)
 	if err != nil {
-		log.Fatalf("Failed to open file: %v", err)
+		logErrorMessage("Failed to open file: %v", err)
 	}
 
 	// Set up the parser configuration.
 	config, err := cc.NewConfig(runtime.GOOS, runtime.GOARCH)
 	if err != nil {
-		log.Fatalf("could not create a config for the parser: %v", err)
+		logErrorMessage("could not create a config for the parser: %v", err)
 	}
 
 	srcs := []cc.Source{
@@ -225,7 +235,7 @@ func debugVersion() {
 
 	ast, err := cc.Parse(config, srcs)
 	if err != nil {
-		log.Fatalln(err)
+		logError(err)
 	}
 
 	// Access the AST of the parsed translation unit.
@@ -239,7 +249,12 @@ func debugVersion() {
 	}
 }
 
-func logError(msg string, args ...any) {
-	fmt.Fprintf(os.Stderr, msg, args)
+func logError(err error) {
+	fmt.Fprintln(os.Stderr, err)
+	os.Exit(1)
+}
+
+func logErrorMessage(msg string, args ...any) {
+	fmt.Fprintf(os.Stderr, msg+"\n", args...)
 	os.Exit(1)
 }
