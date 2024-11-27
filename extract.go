@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -25,7 +26,6 @@ type Field struct {
 	Type      string
 	ArraySize int
 	Kind      PrimitiveKind
-	// if this is true do not need to do size/alignment resolution since it is just a pointer
 }
 
 type Layout struct {
@@ -211,6 +211,19 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 		Alignment: maxAlign,
 		Layout:    layouts,
 	}, nil
+}
+
+func (ctx Context) Optimize(name string, meta AggregateMeta) (AggregateMeta, error) {
+	slices.SortFunc(meta.Layout, func(i, j Layout) int {
+		return -(i.alignment - j.alignment)
+	})
+
+	agg := ctx[name]
+	for idx := range agg.Fields {
+		agg.Fields[idx] = meta.Layout[idx].Field
+	}
+
+	return ctx.ResolveMeta(name)
 }
 
 func ExtractAggregates(fname, cont string) (Context, error) {
