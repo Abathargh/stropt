@@ -4,13 +4,14 @@ package main
 // - show struct fields meta? Like for each substruct field where padding is
 // located -> this could easily be obtained by internally doing
 // ctx.ResolveMeta for the inner type
-// - by specifying `-table`, show it, otherwise only orint size/align/pad
+// - by specifying `-table`, show it, otherwise only print size/align/pad
 // - by specifying `-graph`, show the struct layout with padding blocks
-// - by specifying `-optimize` search for the best layouts
+// - by specifying `-sub` print the sub-aggregates metadata too (different style?)
 // - add ptr size/align, word size/align, short size/align etc. flags
 // - add specific known combinations of the above (e.g. avr => 16bit int, alugn 1)
 // - add support for function pointers parsing
 // - remove log.Fatal/panics
+// - test as wasm app
 
 import (
 	"flag"
@@ -43,9 +44,11 @@ If no source code is passed as a string, then it is mandatory to use the
 "-file" option, and pass an existing file name.
 `
 
-	helpUsage    = "show the help message"
-	versionUsage = "print the version for this build"
-	fileUsage    = "pass a file containing the type definitions"
+	helpUsage     = "show the help message"
+	versionUsage  = "print the version for this build"
+	verboseUsage  = "print more information, e.g. sub-aggregate metadata"
+	optimizeUsage = "suggests an optimized layout and shows related statistics"
+	fileUsage     = "pass a file containing the type definitions"
 )
 
 var Version = ""
@@ -63,17 +66,23 @@ func main() {
 		}
 	}
 
-	var help bool
-	var version bool
-	var file string
+	var (
+		help     bool
+		version  bool
+		verbose  bool
+		optimize bool
+		file     string
+	)
 
 	fs := flag.NewFlagSet("stropt", flag.ExitOnError)
 	fs.BoolVar(&help, "help", false, helpUsage)
 	fs.BoolVar(&version, "version", false, versionUsage)
+	fs.BoolVar(&verbose, "verbose", false, verboseUsage)
+	fs.BoolVar(&optimize, "optimize", false, optimizeUsage)
 	fs.StringVar(&file, "file", "", fileUsage)
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
-		panic(err) // TODO print it nicely
+		logError("could not parse args: %w", err)
 	}
 
 	switch {
@@ -92,16 +101,15 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to open file: %v", err)
 		}
-		stropt(file, fs.Arg(0), string(cont))
+		stropt(file, fs.Arg(0), string(cont), verbose, optimize)
 	case len(fs.Args()) == 2:
-		stropt("", fs.Arg(0), fs.Arg(1))
+		stropt("", fs.Arg(0), fs.Arg(1), verbose, optimize)
 	default:
-		fmt.Println(nameMessage)
-		os.Exit(1)
+		logError(nameMessage)
 	}
 }
 
-func stropt(fname, aggName, cont string) {
+func stropt(fname, aggName, cont string, verbose, optimize bool) {
 	aggregates, err := ExtractAggregates(fname, cont)
 	if err != nil {
 		log.Fatal(err)
@@ -111,24 +119,39 @@ func stropt(fname, aggName, cont string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	printAggregateMeta(aggName, meta)
+	printAggregateMeta(aggName, meta, verbose)
+
+	if optimize {
+		optMeta, err := aggregates.Optimize(aggName, meta)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if optMeta.Size == meta.Size {
+			fmt.Println("\nThe passed layout is already minimal")
+			return
+		}
+
+		fmt.Println("\nSuggested optimization:")
+		printAggregateMeta(aggName, optMeta, verbose)
+	}
 }
 
-func printAggregateMeta(name string, meta AggregateMeta) {
+func printAggregateMeta(name string, meta AggregateMeta, verbose bool) {
 	var headerStyle = lipgloss.NewStyle().
 		Bold(true).
 		Width(15).
-		Foreground(lipgloss.Color("#39e75f")).
+		Foreground(lipgloss.Color("#ececec")).
 		Align(lipgloss.Center)
 
 	var structStyle = lipgloss.NewStyle().
 		Bold(true).
 		Width(15).
-		Foreground(lipgloss.Color("#ff8080")).
+		Foreground(lipgloss.Color("#aeaeae")).
 		Align(lipgloss.Center)
 
 	var rowStyle = lipgloss.NewStyle().
-		Bold(true).
+		Bold(false).
 		Width(15).
 		Foreground(lipgloss.Color("#aeaeae")).
 		Align(lipgloss.Center)
@@ -140,7 +163,7 @@ func printAggregateMeta(name string, meta AggregateMeta) {
 
 	t := table.New().
 		Border(lipgloss.NormalBorder()).
-		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("99"))).
+		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#aeaeae"))).
 		StyleFunc(func(row, col int) lipgloss.Style {
 			switch {
 			case row == -1:
@@ -163,6 +186,16 @@ func printAggregateMeta(name string, meta AggregateMeta) {
 		align := strconv.Itoa(fLayout.alignment)
 		pad := strconv.Itoa(fLayout.padding)
 		t.Row(fLayout.Name, size, align, pad)
+
+		if fLayout.subAggregate != nil && verbose {
+			for _, subLayout := range fLayout.subAggregate {
+				size := strconv.Itoa(subLayout.size)
+				align := strconv.Itoa(subLayout.alignment)
+				pad := strconv.Itoa(subLayout.padding)
+				name := fmt.Sprintf("%s::%s", fLayout.Type, subLayout.Name)
+				t.Row(name, size, align, pad)
+			}
+		}
 	}
 
 	fmt.Println(t)
@@ -204,4 +237,9 @@ func debugVersion() {
 		}
 		fmt.Printf("%s: %v\n", name, node)
 	}
+}
+
+func logError(msg string, args ...any) {
+	fmt.Fprintf(os.Stderr, msg, args)
+	os.Exit(1)
 }
