@@ -6,6 +6,8 @@ package main
 // - add specific known combinations of the above (e.g. avr => 16bit int, alugn 1)
 // - add support for function pointers parsing
 // - test as wasm app
+// --all shoudld show tables (before after opt) padding blocks, structs
+// reordering printed (like inpurple in the example)
 
 import (
 	"flag"
@@ -115,7 +117,11 @@ func stropt(fname, aggName, cont string, bare, verbose, optimize bool) {
 	if err != nil {
 		logError(err)
 	}
-	printAggregateMeta(aggName, meta, bare, verbose)
+
+	if bare {
+		fmt.Fprintf(os.Stdout, "(def) ")
+	}
+	printAggregateMeta(aggName, meta, false, bare, verbose)
 
 	if optimize {
 		optMeta, err := aggregates.Optimize(aggName, meta)
@@ -127,9 +133,10 @@ func stropt(fname, aggName, cont string, bare, verbose, optimize bool) {
 			fmt.Println("\nThe passed layout is already minimal")
 			return
 		}
-
-		fmt.Println("\nSuggested optimization:")
-		printAggregateMeta(aggName, optMeta, bare, verbose)
+		if bare {
+			fmt.Fprintf(os.Stdout, "(opt) ")
+		}
+		printAggregateMeta(aggName, optMeta, true, bare, verbose)
 	}
 }
 
@@ -153,14 +160,19 @@ var (
 			Align(lipgloss.Center)
 )
 
-func printAggregateMeta(name string, meta AggregateMeta, bare, verbose bool) {
+func printAggregateMeta(name string, meta AggregateMeta, opt, bare, verbose bool) {
 	totPadding := 0
 	for _, fLayout := range meta.Layout {
 		totPadding += fLayout.padding
 	}
 
+	typeName := "Type"
+	if opt {
+		typeName = "Type (opt)"
+	}
+
 	t := table.New().
-		Border(lipgloss.NormalBorder()).
+		Border(lipgloss.RoundedBorder()).
 		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#aeaeae"))).
 		StyleFunc(func(row, col int) lipgloss.Style {
 			switch {
@@ -172,7 +184,7 @@ func printAggregateMeta(name string, meta AggregateMeta, bare, verbose bool) {
 				return rowStyle
 			}
 		}).
-		Headers("Type", "Size", "Alignment", "Padding")
+		Headers(typeName, "Size", "Alignment", "Padding")
 
 	doPrint(name, meta.Size, meta.Alignment, totPadding, t, bare)
 
@@ -191,15 +203,23 @@ func printAggregateMeta(name string, meta AggregateMeta, bare, verbose bool) {
 		}
 	}
 
-	if !bare {
-		fmt.Println(t)
+	fmt.Println(t)
+
+	if !bare && opt {
+		fmt.Println(lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			printAggregate(name, meta, false),
+			printAggregate(name, meta, true),
+		))
 	}
 }
+
+// TODO func generateBlocks()
 
 func doPrint(name string, size, align, pad int, tab *table.Table, bare bool) {
 	if bare {
 		fmt.Fprintf(
-			os.Stdout, "name: %s, size: %d, alignment: %d, padding: %d\n",
+			os.Stdout, "%s, size: %d, alignment: %d, padding: %d\n",
 			name, size, align, pad,
 		)
 		return
@@ -247,6 +267,77 @@ func debugVersion() {
 		}
 		fmt.Printf("%s: %v\n", name, node)
 	}
+}
+
+var (
+	highlight = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#313345"}
+	boxStyle  = lipgloss.NewStyle().
+			Background(highlight).
+			Border(lipgloss.RoundedBorder()).
+			Margin(1, 0, 1, 0).
+			Padding(1, 2).
+			Align(lipgloss.Left)
+
+	baseStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FAFAFA")).
+			Background(highlight)
+
+	keywordStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#B29BC5")).
+			Background(highlight)
+
+	commentStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#747893")).
+			Background(highlight)
+)
+
+func printAggregate(name string, meta AggregateMeta, opt bool) string {
+	var builder RenderBuilder
+	if !opt {
+		builder.WriteComment("// default")
+	} else {
+		builder.WriteComment("// optimized")
+	}
+
+	builder.WriteNewline()
+	builder.WriteKeyword(name)
+	builder.WriteBase(" {")
+	builder.WriteNewline()
+	for _, field := range meta.Layout {
+		builder.WriteBase("\t")
+		builder.WriteKeyword(field.Type)
+		builder.WriteBase(" ")
+		builder.WriteBase(field.Name)
+		builder.WriteBase(";")
+		builder.WriteNewline()
+	}
+	builder.WriteBase("};")
+
+	return builder.String()
+}
+
+type RenderBuilder struct {
+	strings.Builder
+}
+
+func (b *RenderBuilder) WriteBase(s string) {
+	b.Builder.WriteString(baseStyle.Render(s))
+}
+
+func (b *RenderBuilder) WriteKeyword(s string) {
+	b.Builder.WriteString(keywordStyle.Render(s))
+}
+
+func (b *RenderBuilder) WriteComment(s string) {
+	b.Builder.WriteString(commentStyle.Render(s))
+}
+
+func (b *RenderBuilder) WriteNewline() {
+	b.Builder.WriteRune('\n')
+}
+
+func (b *RenderBuilder) String() string {
+	return boxStyle.Render(b.Builder.String())
 }
 
 func logError(err error) {
