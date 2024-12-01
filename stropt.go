@@ -120,6 +120,9 @@ func stropt(fname, aggName, cont string, bare, verbose, optimize bool) {
 
 	if bare {
 		fmt.Fprintf(os.Stdout, "(def) ")
+	} else {
+		fmt.Println(titleBox.Render(aggName))
+
 	}
 	printAggregateMeta(aggName, meta, false, bare, verbose)
 
@@ -158,6 +161,12 @@ var (
 			Width(15).
 			Foreground(lipgloss.Color("#aeaeae")).
 			Align(lipgloss.Center)
+
+	titleBox = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			Width(63).
+			Foreground(lipgloss.Color("#AEAEAE")).
+			Align(lipgloss.Center)
 )
 
 func printAggregateMeta(name string, meta AggregateMeta, opt, bare, verbose bool) {
@@ -173,7 +182,6 @@ func printAggregateMeta(name string, meta AggregateMeta, opt, bare, verbose bool
 
 	t := table.New().
 		Border(lipgloss.RoundedBorder()).
-		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#aeaeae"))).
 		StyleFunc(func(row, col int) lipgloss.Style {
 			switch {
 			case row == -1:
@@ -203,14 +211,15 @@ func printAggregateMeta(name string, meta AggregateMeta, opt, bare, verbose bool
 		}
 	}
 
-	fmt.Println(t)
-
-	if !bare && opt {
-		fmt.Println(lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			printAggregate(name, meta, false),
-			printAggregate(name, meta, true),
-		))
+	if !bare {
+		fmt.Println(t)
+		if opt {
+			fmt.Println(lipgloss.JoinHorizontal(
+				lipgloss.Top,
+				printAggregate(name, meta, false),
+				printAggregate(name, meta, true),
+			))
+		}
 	}
 }
 
@@ -270,25 +279,21 @@ func debugVersion() {
 }
 
 var (
-	highlight = lipgloss.AdaptiveColor{Light: "#874BFD", Dark: "#313345"}
-	boxStyle  = lipgloss.NewStyle().
-			Background(highlight).
+	boxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			Margin(1, 0, 1, 0).
-			Padding(1, 2).
+			Width(30).
+			Margin(0, 1, 1, 0).
+			Padding(1, 1, 1, 2).
 			Align(lipgloss.Left)
 
 	baseStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FAFAFA")).
-			Background(highlight)
+			Foreground(lipgloss.Color("#FAFAFA"))
 
 	keywordStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#B29BC5")).
-			Background(highlight)
+			Foreground(lipgloss.Color("#B29BC5"))
 
 	commentStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#747893")).
-			Background(highlight)
+			Foreground(lipgloss.Color("#747893"))
 )
 
 func printAggregate(name string, meta AggregateMeta, opt bool) string {
