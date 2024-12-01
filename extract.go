@@ -214,13 +214,16 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 }
 
 func (ctx Context) Optimize(name string, meta AggregateMeta) (AggregateMeta, error) {
-	slices.SortFunc(meta.Layout, func(i, j Layout) int {
+	layout := make([]Layout, len(meta.Layout))
+	copy(layout, meta.Layout)
+
+	slices.SortFunc(layout, func(i, j Layout) int {
 		return -(i.alignment - j.alignment)
 	})
 
 	agg := ctx[name]
 	for idx := range agg.Fields {
-		agg.Fields[idx] = meta.Layout[idx].Field
+		agg.Fields[idx] = layout[idx].Field
 	}
 
 	return ctx.ResolveMeta(name)

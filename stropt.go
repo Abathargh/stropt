@@ -133,13 +133,22 @@ func stropt(fname, aggName, cont string, bare, verbose, optimize bool) {
 		}
 
 		if optMeta.Size == meta.Size {
-			fmt.Println("\nThe passed layout is already minimal")
+			fmt.Println("The passed layout is already minimal")
 			return
 		}
+
 		if bare {
 			fmt.Fprintf(os.Stdout, "(opt) ")
 		}
+
 		printAggregateMeta(aggName, optMeta, true, bare, verbose)
+		if optimize {
+			fmt.Println(lipgloss.JoinHorizontal(
+				lipgloss.Top,
+				printAggregate(aggName, meta, false),
+				printAggregate(aggName, optMeta, true),
+			))
+		}
 	}
 }
 
@@ -213,13 +222,6 @@ func printAggregateMeta(name string, meta AggregateMeta, opt, bare, verbose bool
 
 	if !bare {
 		fmt.Println(t)
-		if opt {
-			fmt.Println(lipgloss.JoinHorizontal(
-				lipgloss.Top,
-				printAggregate(name, meta, false),
-				printAggregate(name, meta, true),
-			))
-		}
 	}
 }
 
