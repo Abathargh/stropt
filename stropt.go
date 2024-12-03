@@ -1,15 +1,14 @@
 package main
 
 // TODOs
-// - by specifying `-graph`, show the struct layout with padding blocks
-// - add ptr size/align, word size/align, short size/align etc. flags
-// - add specific known combinations of the above (e.g. avr => 16bit int, alugn 1)
+// - tests changing ptr sizes/layout validation
+// - add specific known combinations of the above (e.g. 32bit => ptr 4B ..., avr => 16bit int, alugn 1)
 // - add support for function pointers parsing
 // - test as wasm app
-// --all shoudld show tables (before after opt) padding blocks, structs
-// reordering printed (like inpurple in the example)
+// --cut types/names if too long, with "..." in ui
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -43,11 +42,68 @@ If no source code is passed as a string, then it is mandatory to use the
 	bareUsage     = "just print the data without table formatting or graphics"
 	versionUsage  = "print the version for this build"
 	verboseUsage  = "print more information, e.g. sub-aggregate metadata"
+	ptrUsage      = "sets the pointer size/alignment, as comma-separated values"
+	charUsage     = "sets the char size/alignment, as comma-separated values"
+	shortUsage    = "sets the short size/alignment, as comma-separated values"
+	intUsage      = "sets the int size/alignment, as comma-separated values"
+	longUsage     = "sets the long size/alignment, as comma-separated values"
+	longLongUsage = "sets the long long size/alignment, as comma-separated" +
+		"values"
+	floatUsage      = "sets the float size/alignment, as comma-separated values"
+	doubleUsage     = "sets the double size/alignment, as comma-separated values"
+	longDoubleUsage = "sets the long double size/alignment, as " +
+		"comma-separated values"
 	optimizeUsage = "suggests an optimized layout and shows related statistics"
 	fileUsage     = "pass a file containing the type definitions"
 )
 
-var Version = ""
+var (
+	Version = ""
+
+	ErrSizeAlignParsing = errors.New("could not parse size/alignment")
+	ErrSizeAlignNelem   = errors.New("expected 2 elements")
+	ErrSizeAlignValue   = errors.New("size and alignment must not be zero")
+
+	headerStyle = lipgloss.NewStyle().
+			Bold(true).
+			Width(15).
+			Foreground(lipgloss.Color("#ececec")).
+			Align(lipgloss.Center)
+
+	structStyle = lipgloss.NewStyle().
+			Bold(true).
+			Width(15).
+			Foreground(lipgloss.Color("#aeaeae")).
+			Align(lipgloss.Center)
+
+	rowStyle = lipgloss.NewStyle().
+			Bold(false).
+			Width(15).
+			Foreground(lipgloss.Color("#aeaeae")).
+			Align(lipgloss.Center)
+
+	titleBox = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			Width(63).
+			Foreground(lipgloss.Color("#AEAEAE")).
+			Align(lipgloss.Center)
+
+	boxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			Width(30).
+			Margin(0, 1, 1, 0).
+			Padding(1, 1, 1, 2).
+			Align(lipgloss.Left)
+
+	baseStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FAFAFA"))
+
+	keywordStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#B29BC5"))
+
+	commentStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#747893"))
+)
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "debug" {
@@ -68,7 +124,17 @@ func main() {
 		version  bool
 		verbose  bool
 		optimize bool
-		file     string
+
+		ptr        string
+		char       string
+		short      string
+		intM       string
+		long       string
+		longLong   string
+		float      string
+		double     string
+		longDouble string
+		file       string
 	)
 
 	fs := flag.NewFlagSet("stropt", flag.ExitOnError)
@@ -77,10 +143,27 @@ func main() {
 	fs.BoolVar(&version, "version", false, versionUsage)
 	fs.BoolVar(&verbose, "verbose", false, verboseUsage)
 	fs.BoolVar(&optimize, "optimize", false, optimizeUsage)
+	fs.StringVar(&ptr, "ptr", "", ptrUsage)
+	fs.StringVar(&char, "char", "", charUsage)
+	fs.StringVar(&short, "short", "", shortUsage)
+	fs.StringVar(&intM, "int", "", intUsage)
+	fs.StringVar(&long, "long", "", longUsage)
+	fs.StringVar(&longLong, "longlong", "", longLongUsage)
+	fs.StringVar(&float, "float", "", floatUsage)
+	fs.StringVar(&double, "double", "", doubleUsage)
+	fs.StringVar(&longDouble, "longdouble", "", longDoubleUsage)
 	fs.StringVar(&file, "file", "", fileUsage)
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		logErrorMessage("could not parse args: %s", err)
+	}
+
+	err := handleSizeAlignOptions(
+		ptr, char, short, intM, long, longLong, float, double, longDouble,
+	)
+
+	if err != nil {
+		logError(fmt.Errorf("wrong option value: %w", err))
 	}
 
 	switch {
@@ -152,31 +235,96 @@ func stropt(fname, aggName, cont string, bare, verbose, optimize bool) {
 	}
 }
 
-var (
-	headerStyle = lipgloss.NewStyle().
-			Bold(true).
-			Width(15).
-			Foreground(lipgloss.Color("#ececec")).
-			Align(lipgloss.Center)
+func handleSizeAlignOptions(p, c, s, i, l, ll, f, d, ld string) error {
+	switch {
+	case p != "":
+		size, align, err := getSizeAlign(p)
+		if err != nil {
+			return err
+		}
+		SetPointerAlignSize(align, size)
+	case c != "":
+		size, align, err := getSizeAlign(c)
+		if err != nil {
+			return err
+		}
+		SetCharAlignSize(align, size)
+	case s != "":
+		size, align, err := getSizeAlign(s)
+		if err != nil {
+			return err
+		}
+		SetShortAlignSize(align, size)
+	case i != "":
+		size, align, err := getSizeAlign(i)
+		if err != nil {
+			return err
+		}
+		SetIntAlignSize(align, size)
+	case l != "":
+		size, align, err := getSizeAlign(l)
+		if err != nil {
+			return err
+		}
+		SetLongAlignSize(align, size)
+	case ll != "":
+		size, align, err := getSizeAlign(ll)
+		if err != nil {
+			return err
+		}
+		SetLongLongAlignSize(align, size)
+	case f != "":
+		size, align, err := getSizeAlign(f)
+		if err != nil {
+			return err
+		}
+		SetFloatAlignSize(align, size)
+	case d != "":
+		size, align, err := getSizeAlign(d)
+		if err != nil {
+			return err
+		}
+		SetDoubleAlignSize(align, size)
+	case ld != "":
+		size, align, err := getSizeAlign(ld)
+		if err != nil {
+			return err
+		}
+		SetLongDoubleAlignSize(align, size)
+	}
+	return nil
+}
 
-	structStyle = lipgloss.NewStyle().
-			Bold(true).
-			Width(15).
-			Foreground(lipgloss.Color("#aeaeae")).
-			Align(lipgloss.Center)
+func getSizeAlign(in string) (int, int, error) {
+	list, err := parseIntList(in)
+	if err != nil {
+		return -1, -1, fmt.Errorf("%w '%s'", ErrSizeAlignParsing, in)
+	}
 
-	rowStyle = lipgloss.NewStyle().
-			Bold(false).
-			Width(15).
-			Foreground(lipgloss.Color("#aeaeae")).
-			Align(lipgloss.Center)
+	if len(list) != 2 {
+		return -1, -1, ErrSizeAlignNelem
+	}
 
-	titleBox = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			Width(63).
-			Foreground(lipgloss.Color("#AEAEAE")).
-			Align(lipgloss.Center)
-)
+	if list[0] == 0 || list[1] == 0 {
+		return -1, -1, ErrSizeAlignValue
+	}
+
+	return list[0], list[1], nil
+}
+
+func parseIntList(in string) ([]int, error) {
+	splitted := strings.Split(in, ",")
+	list := make([]int, len(splitted))
+
+	for idx, elem := range splitted {
+		ielem, err := strconv.ParseInt(elem, 0, 0)
+		if err != nil {
+			return nil, err
+		}
+		list[idx] = int(ielem)
+	}
+	return list, nil
+}
 
 func printAggregateMeta(name string, meta AggregateMeta, opt, bare, verbose bool) {
 	totPadding := 0
@@ -224,8 +372,6 @@ func printAggregateMeta(name string, meta AggregateMeta, opt, bare, verbose bool
 		fmt.Println(t)
 	}
 }
-
-// TODO func generateBlocks()
 
 func doPrint(name string, size, align, pad int, tab *table.Table, bare bool) {
 	if bare {
@@ -279,24 +425,6 @@ func debugVersion() {
 		fmt.Printf("%s: %v\n", name, node)
 	}
 }
-
-var (
-	boxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			Width(30).
-			Margin(0, 1, 1, 0).
-			Padding(1, 1, 1, 2).
-			Align(lipgloss.Left)
-
-	baseStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FAFAFA"))
-
-	keywordStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#B29BC5"))
-
-	commentStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#747893"))
-)
 
 func printAggregate(name string, meta AggregateMeta, opt bool) string {
 	var builder RenderBuilder
