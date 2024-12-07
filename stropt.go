@@ -206,7 +206,7 @@ func stropt(fname, aggName, cont string, bare, verbose, optimize bool) {
 	if bare {
 		fmt.Fprintf(os.Stdout, "(def) ")
 	} else {
-		fmt.Println(titleBox.Render(aggName))
+		fmt.Println(titleBox.Render(fmt.Sprintf("stropt - %s", aggName)))
 
 	}
 	printAggregateMeta(aggName, meta, false, bare, verbose)
@@ -334,9 +334,9 @@ func printAggregateMeta(name string, meta AggregateMeta, opt, bare, verbose bool
 		totPadding += fLayout.padding
 	}
 
-	typeName := "Type"
+	typeName := "Name"
 	if opt {
-		typeName = "Type (opt)"
+		typeName = "Name (opt)"
 	}
 
 	t := table.New().
