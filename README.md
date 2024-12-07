@@ -6,8 +6,11 @@ alignment and total padding bytes.
 
 This can prove useful to optimize the layout of a struct in your code.
 
-`stropt` offers statistics on a C aggregate type (structs, unions), passed as a parameter, and contained in a source file to be provided to the tool.
+`stropt` offers statistics on a C aggregate type (structs, unions), passed 
+as a parameter, and contained in a source file to be provided to the tool.
 
+More info on C structs and how compilers handle them 
+[in this article here](https://dev.to/abathargh/optimizing-c-structs-layouts-4kkm).
 
 ## Build
 
