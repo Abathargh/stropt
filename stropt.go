@@ -2,7 +2,9 @@ package main
 
 // TODOs
 // - tests changing ptr sizes/layout validation
-// - add specific known combinations of the above (e.g. 32bit => ptr 4B ..., avr => 16bit int, alugn 1)
+// - add specific known combinations of the above
+//   - e.g. 32bit => ptr 4B
+//   - avr => 16bit int, align 1
 // - add support for function pointers parsing
 // - test as wasm app
 // --cut types/names if too long, with "..." in ui
@@ -361,9 +363,8 @@ func printAggregateMeta(name string, meta AggregateMeta, opt, bare, verbose bool
 
 		if fLayout.subAggregate != nil && verbose {
 			for _, sub := range fLayout.subAggregate {
-				name := fmt.Sprintf("%s::%s", fLayout.Type, sub.Name)
+				name := fmt.Sprintf("%s::%s", fLayout.Name, sub.Name)
 				doPrint(name, sub.size, sub.alignment, sub.padding, t, bare)
-				t.Row(name, size, align, pad)
 			}
 		}
 	}
