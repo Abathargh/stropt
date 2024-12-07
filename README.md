@@ -6,14 +6,17 @@ alignment and total padding bytes.
 
 This can prove useful to optimize the layout of a struct in your code.
 
-`stropt` offers statistics on a C aggregate type (structs, unions), passed as 
-a parameter, and contained in a source file to be provided to the tool
+`stropt` offers statistics on a C aggregate type (structs, unions), passed as a parameter, and contained in a source file to be provided to the tool.
 
 
 ## Build
 
 ```bash
+git clone https://github.com/Abathargh/stropt
 go build
+
+// or, if you want to install this directly
+go install github.com/Abathargh/stropt
 ```
 
 ## Usage
@@ -38,6 +41,38 @@ struct test {
 
 ```bash
 stropt -file test.c "struct test" 
+```
+
+## Optimizing hints
+
+You can use `-optimize` to get hints on how to optimize your struct layout, so 
+that its size is minimized:
+
+![stropt output with -optimize -verbose](opt.png)
+
+Note that specifying `-verbose` will print information about the layout of 
+fields that are structs themselves.
+
+
+## Specify platform-specific alignment and sizes
+
+A series of flags can be used to specify the size of base types on your 
+platform (e.g. char, short, int, long, etc.). These are the following:
+
+- ptr
+- char
+- short
+- int
+- long
+- longlong
+- float
+- double
+- longdouble
+
+Use them as such:
+
+```bash
+stropt -ptr 4,4 -file test.c "struct test"
 ```
 
 ## License
