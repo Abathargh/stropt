@@ -300,6 +300,7 @@ func TestComputeMeta(t *testing.T) {
 		name        string
 		expSize     int
 		expAlig     int
+		expLayout   []Layout
 		expectedErr error
 	}{
 		{
@@ -308,6 +309,13 @@ func TestComputeMeta(t *testing.T) {
 			"struct a1",
 			24,
 			8,
+			[]Layout{
+				{size: 4, alignment: 4, padding: 0},
+				{size: 1, alignment: 1, padding: 1},
+				{size: 2, alignment: 2, padding: 0},
+				{size: 4, alignment: 4, padding: 4},
+				{size: 8, alignment: 8, padding: 0},
+			},
 			nil,
 		},
 		{
@@ -316,6 +324,12 @@ func TestComputeMeta(t *testing.T) {
 			"struct a1",
 			24,
 			8,
+			[]Layout{
+				{size: 4, alignment: 4, padding: 4},
+				{size: 8, alignment: 8, padding: 0},
+				{size: 1, alignment: 1, padding: 3},
+				{size: 4, alignment: 4, padding: 0},
+			},
 			nil,
 		},
 		{
@@ -325,6 +339,14 @@ func TestComputeMeta(t *testing.T) {
 			"struct s1",
 			12,
 			4,
+			[]Layout{
+				{size: 4, alignment: 4, padding: 0},
+				{size: 4, alignment: 2, padding: 0, subAggregate: []Layout{
+					{size: 2, alignment: 2, padding: 0},
+					{size: 1, alignment: 1, padding: 1},
+				}},
+				{size: 4, alignment: 4, padding: 0},
+			},
 			nil,
 		},
 		{
@@ -332,6 +354,10 @@ func TestComputeMeta(t *testing.T) {
 			"struct p1",
 			16,
 			8,
+			[]Layout{
+				{size: 8, alignment: 8, padding: 0},
+				{size: 4, alignment: 4, padding: 4},
+			},
 			nil,
 		},
 		{
@@ -339,6 +365,11 @@ func TestComputeMeta(t *testing.T) {
 			"struct p1",
 			416,
 			8,
+			[]Layout{
+				{size: 8, alignment: 8, padding: 0},
+				{size: 4, alignment: 4, padding: 0},
+				{size: 400, alignment: 4, padding: 4},
+			},
 			nil,
 		},
 		{
@@ -347,6 +378,14 @@ func TestComputeMeta(t *testing.T) {
 			"struct p1",
 			416,
 			8,
+			[]Layout{
+				{size: 8, alignment: 8, padding: 0},
+				{size: 4, alignment: 4, padding: 0},
+				{size: 400, alignment: 2, padding: 4, subAggregate: []Layout{
+					{size: 2, alignment: 2, padding: 0},
+					{size: 1, alignment: 1, padding: 1},
+				}},
+			},
 			nil,
 		},
 	}
@@ -372,9 +411,54 @@ func TestComputeMeta(t *testing.T) {
 		}
 
 		if meta.Alignment != testCase.expAlig {
-			t.Errorf("Expected alignment: %d: got: %d", testCase.expAlig, meta.Alignment)
+			t.Errorf("Expected alignment: %d: got: %d", testCase.expAlig,
+				meta.Alignment)
 		}
 
-		// add layout checks later
+		for idx, layout := range testCase.expLayout {
+			actualLayout := meta.Layout[idx]
+
+			if layout.size != actualLayout.size {
+				t.Errorf("Expected size for field %s: %d: got: %d",
+					actualLayout.Name, layout.size, actualLayout.size,
+				)
+			}
+
+			if layout.alignment != actualLayout.alignment {
+				t.Errorf("Expected alignment for field %s: %d: got: %d",
+					actualLayout.Name, layout.alignment, actualLayout.alignment,
+				)
+			}
+
+			if layout.padding != actualLayout.padding {
+				t.Errorf("Expected padding for field %s: %d: got: %d",
+					actualLayout.Name, layout.padding, actualLayout.padding,
+				)
+			}
+
+			if layout.subAggregate != nil {
+				for jdx, subLayout := range layout.subAggregate {
+					actualSubL := layout.subAggregate[jdx]
+
+					if subLayout.size != actualSubL.size {
+						t.Errorf("Expected size for field %s: %d: got: %d",
+							actualSubL.Name, subLayout.size, actualSubL.size,
+						)
+					}
+
+					if subLayout.alignment != actualSubL.alignment {
+						t.Errorf("Expected alignment for field %s: %d: got: %d",
+							actualSubL.Name, subLayout.alignment, actualSubL.alignment,
+						)
+					}
+
+					if subLayout.padding != actualSubL.padding {
+						t.Errorf("Expected padding for field %s: %d: got: %d",
+							actualSubL.Name, subLayout.padding, actualSubL.padding,
+						)
+					}
+				}
+			}
+		}
 	}
 }
