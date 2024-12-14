@@ -9,8 +9,15 @@ func TestStructBasicTypes(t *testing.T) {
 	testCases := []struct {
 		test        string
 		expected    Context
+		useCompiler bool
 		expectedErr error
 	}{
+		{
+			"#include <stdint.h> struct test_struct { uint64_t a; };",
+			Context{},
+			false,
+			ErrConfig,
+		},
 		{
 			"#include <stdint.h> struct test_struct { uint64_t a; };",
 			Context{
@@ -20,6 +27,7 @@ func TestStructBasicTypes(t *testing.T) {
 					Kind:   StructKind,
 				},
 			},
+			true,
 			nil,
 		},
 		{
@@ -35,6 +43,23 @@ func TestStructBasicTypes(t *testing.T) {
 					Kind: UnionKind,
 				},
 			},
+			false,
+			nil,
+		},
+		{
+			"union un { double d; float f; unsigned char uc; };",
+			Context{
+				"union un": {
+					Name: "union un",
+					Fields: []Field{
+						{Name: "d", Type: "double", Kind: BasePKind},
+						{Name: "f", Type: "float", Kind: BasePKind},
+						{Name: "uc", Type: "unsigned char", Kind: BasePKind},
+					},
+					Kind: UnionKind,
+				},
+			},
+			true,
 			nil,
 		},
 		{
@@ -51,6 +76,24 @@ func TestStructBasicTypes(t *testing.T) {
 					Kind: StructKind,
 				},
 			},
+			false,
+			nil,
+		},
+		{
+			"struct test_mul { int a; float b; double d; long long l; };",
+			Context{
+				"struct test_mul": {
+					Name: "struct test_mul",
+					Fields: []Field{
+						{Name: "a", Type: "int", Kind: BasePKind},
+						{Name: "b", Type: "float", Kind: BasePKind},
+						{Name: "d", Type: "double", Kind: BasePKind},
+						{Name: "l", Type: "long long", Kind: BasePKind},
+					},
+					Kind: StructKind,
+				},
+			},
+			true,
 			nil,
 		},
 		{
@@ -65,7 +108,30 @@ func TestStructBasicTypes(t *testing.T) {
 					Kind: StructKind,
 				},
 			},
+			false,
 			nil,
+		},
+		{
+			"struct test_ptr { int * a; int arr[100]; };",
+			Context{
+				"struct test_ptr": {
+					Name: "struct test_ptr",
+					Fields: []Field{
+						{Name: "a", Type: "int *", Kind: PointerPKind},
+						{Name: "arr", Type: "int", ArraySize: 100, Kind: ArrayPKind},
+					},
+					Kind: StructKind,
+				},
+			},
+			true,
+			nil,
+		},
+		{
+			`#include <stdint.h> typedef union {float f; int i; uint64_t ui; } un; 
+			struct test_ptr { int * a; };`,
+			Context{},
+			false,
+			ErrConfig,
 		},
 		{
 			`#include <stdint.h> typedef union {float f; int i; uint64_t ui; } un; 
@@ -97,10 +163,11 @@ func TestStructBasicTypes(t *testing.T) {
 					Kind: StructKind,
 				},
 			},
+			true,
 			nil,
 		},
 		{
-			`struct test_ptr { const int * a; const int * const b; };`,
+			"struct test_ptr { const int * a; const int * const b; };",
 			Context{
 				"struct test_ptr": {
 					Name: "struct test_ptr",
@@ -111,6 +178,22 @@ func TestStructBasicTypes(t *testing.T) {
 					Kind: StructKind,
 				},
 			},
+			false,
+			nil,
+		},
+		{
+			"struct test_ptr { const int * a; const int * const b; };",
+			Context{
+				"struct test_ptr": {
+					Name: "struct test_ptr",
+					Fields: []Field{
+						{Name: "a", Type: "const int *", Kind: PointerPKind},
+						{Name: "b", Type: "const int * const", Kind: PointerPKind},
+					},
+					Kind: StructKind,
+				},
+			},
+			true,
 			nil,
 		},
 		{
@@ -133,13 +216,36 @@ func TestStructBasicTypes(t *testing.T) {
 					Kind: StructKind,
 				},
 			},
+			false,
 			nil,
 		},
-		// add struct in struct case
+		{
+			`struct inner { int a; };
+			struct test_inner { int a1; struct inner a2; };`,
+			Context{
+				"struct inner": {
+					Name: "struct inner",
+					Fields: []Field{
+						{Name: "a", Type: "int", Kind: BasePKind},
+					},
+					Kind: StructKind,
+				},
+				"struct test_inner": {
+					Name: "struct test_inner",
+					Fields: []Field{
+						{Name: "a1", Type: "int", Kind: BasePKind},
+						{Name: "a2", Type: "struct inner", Kind: BasePKind},
+					},
+					Kind: StructKind,
+				},
+			},
+			false,
+			nil,
+		},
 	}
 
 	for _, testCase := range testCases {
-		structs, err := ExtractAggregates("", testCase.test)
+		structs, err := ExtractAggregates("", testCase.test, testCase.useCompiler)
 		if err != nil {
 			if errors.Is(err, testCase.expectedErr) {
 				t.Errorf("Expected error %v: got %v", testCase.expectedErr, err)
@@ -246,9 +352,9 @@ func TestComputeMeta(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		structs, err := ExtractAggregates("", testCase.test)
+		structs, err := ExtractAggregates("", testCase.test, true)
 		if err != nil {
-			t.Errorf("Unexpected error when parsing %s", testCase.test)
+			t.Errorf("Unexpected error when parsing %s: %s", testCase.test, err)
 			continue
 		}
 
