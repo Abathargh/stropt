@@ -1,6 +1,8 @@
 package main
 
 // TODOs
+// - include paths
+// - additional sources
 // - tests changing ptr sizes/layout validation
 // - add specific known combinations of the above
 //   - e.g. 32bit => ptr 4B
@@ -44,6 +46,7 @@ If no source code is passed as a string, then it is mandatory to use the
 	bareUsage     = "just print the data without table formatting or graphics"
 	versionUsage  = "print the version for this build"
 	verboseUsage  = "print more information, e.g. sub-aggregate metadata"
+	useCompUsage  = "attempts to resolve includes using the system compiler"
 	ptrUsage      = "sets the pointer size/alignment, as comma-separated values"
 	charUsage     = "sets the char size/alignment, as comma-separated values"
 	shortUsage    = "sets the short size/alignment, as comma-separated values"
@@ -123,6 +126,7 @@ func main() {
 	var (
 		help     bool
 		bare     bool
+		useComp  bool
 		version  bool
 		verbose  bool
 		optimize bool
@@ -142,6 +146,7 @@ func main() {
 	fs := flag.NewFlagSet("stropt", flag.ExitOnError)
 	fs.BoolVar(&help, "help", false, helpUsage)
 	fs.BoolVar(&bare, "bare", false, bareUsage)
+	fs.BoolVar(&useComp, "use-compiler", false, useCompUsage)
 	fs.BoolVar(&version, "version", false, versionUsage)
 	fs.BoolVar(&verbose, "verbose", false, verboseUsage)
 	fs.BoolVar(&optimize, "optimize", false, optimizeUsage)
@@ -184,16 +189,16 @@ func main() {
 		if err != nil {
 			logErrorMessage("Failed to open file: %v", err)
 		}
-		stropt(file, fs.Arg(0), string(cont), bare, verbose, optimize)
+		stropt(file, fs.Arg(0), string(cont), bare, verbose, optimize, useComp)
 	case len(fs.Args()) == 2:
-		stropt("", fs.Arg(0), fs.Arg(1), bare, verbose, optimize)
+		stropt("", fs.Arg(0), fs.Arg(1), bare, verbose, optimize, useComp)
 	default:
 		logErrorMessage(nameMessage)
 	}
 }
 
-func stropt(fname, aggName, cont string, bare, verbose, optimize bool) {
-	aggregates, err := ExtractAggregates(fname, cont)
+func stropt(fname, aggName, cont string, bare, verbose, optimize, comp bool) {
+	aggregates, err := ExtractAggregates(fname, cont, comp)
 	if err != nil {
 		logError(err)
 	}

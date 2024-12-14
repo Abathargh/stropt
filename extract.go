@@ -56,8 +56,19 @@ type AggregateMeta struct {
 }
 
 var (
+	ErrConfig = errors.New("could not create a config for the parser")
 	ErrParse  = errors.New("cannot parse source")
 	ErrSymbol = errors.New("cannot find symbol")
+)
+
+const (
+	includeErrMsg = `you are using an '#include' directive, but the tool does not 
+resolve include paths by default. Use the '-use-compiler' flag to force that
+behavior.`
+	compErrMsg = `you are attempting to use the system compiler through the 
+'-use-compiler' flag, but it could be that you do not have one installed or 
+that this tool cannot find it. The tool checks the CC environment variable, cc
+alias and gcc executable for a compiler and fails if no one works.`
 )
 
 func (ctx Context) firstPass(fields []Field) ([]AggregateMeta, int, error) {
@@ -229,23 +240,35 @@ func (ctx Context) Optimize(name string, meta AggregateMeta) (AggregateMeta, err
 	return ctx.ResolveMeta(name)
 }
 
-func ExtractAggregates(fname, cont string) (Context, error) {
-	// TODO: add possible way of selecting the compiler (e.g. avr, arm-none..)
-	// TODO: add possible flags to be passed down
-	config, err := cc.NewConfig(runtime.GOOS, runtime.GOARCH)
-	if err != nil {
-		return nil, fmt.Errorf("could not create a config for the parser: %w", err)
+func ExtractAggregates(fname, cont string, useCompiler bool) (Context, error) {
+	var err error
+	config := &cc.Config{
+		Predefined: "int __predefined_declarator;",
 	}
 
-	// TODO add possible multiple sources
+	if useCompiler {
+		config, err = cc.NewConfig(runtime.GOOS, runtime.GOARCH)
+		if err != nil {
+			return nil, fmt.Errorf("%w:\n%s Original error: \n\t%w", ErrConfig,
+				compErrMsg, err)
+		}
+	}
+
 	srcs := []cc.Source{
 		{Name: "<predefined>", Value: config.Predefined},
-		{Name: "<builtin>", Value: cc.Builtin},
 		{Name: fname, Value: cont},
+	}
+
+	if useCompiler {
+		srcs = append(srcs, cc.Source{Name: "<builtin>", Value: cc.Builtin})
 	}
 
 	ast, err := cc.Parse(config, srcs)
 	if err != nil {
+		if strings.Contains(err.Error(), "include") {
+			return nil, fmt.Errorf("%w:\n%s Original error: \n\t%w", ErrParse,
+				includeErrMsg, err)
+		}
 		return nil, fmt.Errorf("%w: %w", ErrParse, err)
 	}
 
@@ -253,8 +276,6 @@ func ExtractAggregates(fname, cont string) (Context, error) {
 
 	for name, node := range ast.Scope.Nodes {
 		switch def := node[0].(type) {
-		// do case base type? does it make sense? typedefs to base type dont
-		// get parsed well
 		case *cc.StructOrUnionSpecifier:
 			currStruct := Aggregate{}
 			curr := def.StructDeclarationList
