@@ -3,10 +3,8 @@ package main
 // TODOs
 // - include paths
 // - additional sources
-// - tests changing ptr sizes/layout validation
-// - add specific known combinations of the above
-//   - e.g. 32bit => ptr 4B
-//   - avr => 16bit int, align 1
+// - include stdint types in predefined?
+// - typedef struct -> typedefs in general
 // - add support for function pointers parsing
 // - test as wasm app
 // --cut types/names if too long, with "..." in ui
@@ -48,6 +46,8 @@ If no source code is passed as a string, then it is mandatory to use the
 	verboseUsage  = "print more information, e.g. sub-aggregate metadata"
 	useCompUsage  = "attempts to resolve includes using the system compiler"
 	ptrUsage      = "sets the pointer size/alignment, as comma-separated values"
+	s32bitUsage   = "sets the type size/alignment as on a 32bit system"
+	avrUsage      = "sets the type size/alignment as on a AVR system"
 	charUsage     = "sets the char size/alignment, as comma-separated values"
 	shortUsage    = "sets the short size/alignment, as comma-separated values"
 	intUsage      = "sets the int size/alignment, as comma-separated values"
@@ -131,6 +131,9 @@ func main() {
 		verbose  bool
 		optimize bool
 
+		s32bit bool
+		avr    bool
+
 		ptr        string
 		char       string
 		short      string
@@ -150,6 +153,8 @@ func main() {
 	fs.BoolVar(&version, "version", false, versionUsage)
 	fs.BoolVar(&verbose, "verbose", false, verboseUsage)
 	fs.BoolVar(&optimize, "optimize", false, optimizeUsage)
+	fs.BoolVar(&s32bit, "32bit", false, s32bitUsage)
+	fs.BoolVar(&optimize, "avr", false, avrUsage)
 	fs.StringVar(&ptr, "ptr", "", ptrUsage)
 	fs.StringVar(&char, "char", "", charUsage)
 	fs.StringVar(&short, "short", "", shortUsage)
@@ -165,12 +170,18 @@ func main() {
 		logErrorMessage("could not parse args: %s", err)
 	}
 
-	err := handleSizeAlignOptions(
-		ptr, char, short, intM, long, longLong, float, double, longDouble,
-	)
-
-	if err != nil {
-		logError(fmt.Errorf("wrong option value: %w", err))
+	switch {
+	case s32bit:
+		Set32BitSys()
+	case avr:
+		SetAvrSys()
+	default:
+		err := handleSizeAlignOptions(
+			ptr, char, short, intM, long, longLong, float, double, longDouble,
+		)
+		if err != nil {
+			logError(fmt.Errorf("wrong option value: %w", err))
+		}
 	}
 
 	switch {

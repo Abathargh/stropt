@@ -112,6 +112,30 @@ var (
 	}
 )
 
+func SetAvrSys() {
+	SetPointerAlignSize(1, 4)
+	SetCharAlignSize(1, 1)
+	SetShortAlignSize(1, 2)
+	SetIntAlignSize(1, 2)
+	SetLongAlignSize(1, 4)
+	SetLongLongAlignSize(1, 8)
+	SetFloatAlignSize(1, 4)
+	SetDoubleAlignSize(1, 4)
+	SetLongDoubleAlignSize(1, 8)
+}
+
+func Set32BitSys() {
+	SetPointerAlignSize(4, 4)
+	SetCharAlignSize(1, 1)
+	SetShortAlignSize(2, 2)
+	SetIntAlignSize(4, 4)
+	SetLongAlignSize(4, 4)
+	SetLongLongAlignSize(4, 8)
+	SetFloatAlignSize(4, 4)
+	SetDoubleAlignSize(4, 8)
+	SetLongDoubleAlignSize(4, 12)
+}
+
 func SetPointerAlignSize(alignment, size int) {
 	pointerAlign = alignment
 	pointerSize = size
