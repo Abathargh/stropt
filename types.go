@@ -116,7 +116,7 @@ var (
 )
 
 func SetAvrSys() {
-	SetPointerAlignSize(1, 4)
+	SetPointerAlignSize(1, 2)
 	SetEnumAlignSize(1, 2)
 	SetCharAlignSize(1, 1)
 	SetShortAlignSize(1, 2)

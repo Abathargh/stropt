@@ -156,7 +156,7 @@ func main() {
 	fs.BoolVar(&verbose, "verbose", false, verboseUsage)
 	fs.BoolVar(&optimize, "optimize", false, optimizeUsage)
 	fs.BoolVar(&s32bit, "32bit", false, s32bitUsage)
-	fs.BoolVar(&optimize, "avr", false, avrUsage)
+	fs.BoolVar(&avr, "avr", false, avrUsage)
 	fs.StringVar(&ptr, "ptr", "", ptrUsage)
 	fs.StringVar(&enum, "enum", "", enumUsage)
 	fs.StringVar(&char, "char", "", charUsage)
