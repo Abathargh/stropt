@@ -46,6 +46,7 @@ If no source code is passed as a string, then it is mandatory to use the
 	verboseUsage  = "print more information, e.g. sub-aggregate metadata"
 	useCompUsage  = "attempts to resolve includes using the system compiler"
 	ptrUsage      = "sets the pointer size/alignment, as comma-separated values"
+	enumUsage     = "sets the enum size/alignment, as comma-separated values"
 	s32bitUsage   = "sets the type size/alignment as on a 32bit system"
 	avrUsage      = "sets the type size/alignment as on a AVR system"
 	charUsage     = "sets the char size/alignment, as comma-separated values"
@@ -135,6 +136,7 @@ func main() {
 		avr    bool
 
 		ptr        string
+		enum       string
 		char       string
 		short      string
 		intM       string
@@ -156,6 +158,7 @@ func main() {
 	fs.BoolVar(&s32bit, "32bit", false, s32bitUsage)
 	fs.BoolVar(&optimize, "avr", false, avrUsage)
 	fs.StringVar(&ptr, "ptr", "", ptrUsage)
+	fs.StringVar(&enum, "enum", "", enumUsage)
 	fs.StringVar(&char, "char", "", charUsage)
 	fs.StringVar(&short, "short", "", shortUsage)
 	fs.StringVar(&intM, "int", "", intUsage)
@@ -177,7 +180,7 @@ func main() {
 		SetAvrSys()
 	default:
 		err := handleSizeAlignOptions(
-			ptr, char, short, intM, long, longLong, float, double, longDouble,
+			ptr, enum, char, short, intM, long, longLong, float, double, longDouble,
 		)
 		if err != nil {
 			logError(fmt.Errorf("wrong option value: %w", err))
@@ -253,7 +256,7 @@ func stropt(fname, aggName, cont string, bare, verbose, optimize, comp bool) {
 	}
 }
 
-func handleSizeAlignOptions(p, c, s, i, l, ll, f, d, ld string) error {
+func handleSizeAlignOptions(p, e, c, s, i, l, ll, f, d, ld string) error {
 	switch {
 	case p != "":
 		size, align, err := getSizeAlign(p)
@@ -261,6 +264,12 @@ func handleSizeAlignOptions(p, c, s, i, l, ll, f, d, ld string) error {
 			return err
 		}
 		SetPointerAlignSize(align, size)
+	case e != "":
+		size, align, err := getSizeAlign(e)
+		if err != nil {
+			return err
+		}
+		SetEnumAlignSize(align, size)
 	case c != "":
 		size, align, err := getSizeAlign(c)
 		if err != nil {

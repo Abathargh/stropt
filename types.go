@@ -11,6 +11,9 @@ var (
 	pointerSize  = 8
 	pointerAlign = 8
 
+	enumSize  = 4
+	enumAlign = 4
+
 	charTypes = []string{
 		"char",
 		"unsigned char",
@@ -114,6 +117,7 @@ var (
 
 func SetAvrSys() {
 	SetPointerAlignSize(1, 4)
+	SetEnumAlignSize(1, 2)
 	SetCharAlignSize(1, 1)
 	SetShortAlignSize(1, 2)
 	SetIntAlignSize(1, 2)
@@ -126,6 +130,7 @@ func SetAvrSys() {
 
 func Set32BitSys() {
 	SetPointerAlignSize(4, 4)
+	SetEnumAlignSize(4, 4)
 	SetCharAlignSize(1, 1)
 	SetShortAlignSize(2, 2)
 	SetIntAlignSize(4, 4)
@@ -139,6 +144,11 @@ func Set32BitSys() {
 func SetPointerAlignSize(alignment, size int) {
 	pointerAlign = alignment
 	pointerSize = size
+}
+
+func SetEnumAlignSize(alignment, size int) {
+	enumAlign = alignment
+	enumSize = size
 }
 
 func SetCharAlignSize(alignment, size int) {
