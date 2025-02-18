@@ -409,6 +409,19 @@ func TestComputeMeta(t *testing.T) {
 			},
 			nil,
 		},
+		{
+			`typedef enum E { a, b, c } E;
+			struct p1 { enum E en; char * str; int a; };`,
+			"struct p1",
+			24,
+			8,
+			[]Layout{
+				{size: 4, alignment: 4, padding: 4},
+				{size: 8, alignment: 8, padding: 0},
+				{size: 4, alignment: 4, padding: 4},
+			},
+			nil,
+		},
 	}
 
 	for _, testCase := range testCases {
