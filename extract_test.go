@@ -242,6 +242,27 @@ func TestStructBasicTypes(t *testing.T) {
 			false,
 			nil,
 		},
+		{
+			`enum example { test, prova, ssa };
+			struct test_inner { int a1; enum example ex; };`,
+			Context{
+				"enum example": {
+					Name:   "enum example",
+					Fields: nil,
+					Kind:   EnumKind,
+				},
+				"struct test_inner": {
+					Name: "struct test_inner",
+					Fields: []Field{
+						{Name: "a1", Type: "int", Kind: BasePKind},
+						{Name: "ex", Type: "enum example", Kind: EnumPKind},
+					},
+					Kind: StructKind,
+				},
+			},
+			false,
+			nil,
+		},
 	}
 
 	for _, testCase := range testCases {
