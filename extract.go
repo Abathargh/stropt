@@ -19,6 +19,7 @@ const (
 	BasePKind PrimitiveKind = iota
 	PointerPKind
 	ArrayPKind
+	EnumPKind
 )
 
 type Field struct {
@@ -41,6 +42,7 @@ type AggregateKind uint
 const (
 	StructKind AggregateKind = iota
 	UnionKind
+	EnumKind
 )
 
 type Aggregate struct {
@@ -108,6 +110,18 @@ func (ctx Context) firstPass(fields []Field) ([]AggregateMeta, int, error) {
 			continue
 		}
 
+		if field.Kind == EnumPKind {
+			resMetas = append(resMetas, AggregateMeta{
+				Size:      enumSize,
+				Alignment: enumAlign,
+			})
+
+			if enumAlign > maxAlign {
+				maxAlign = enumAlign
+			}
+			continue
+		}
+
 		// Aggregate case
 		subMeta, err := ctx.resolveAggregate(field.Type)
 		if err != nil {
@@ -155,6 +169,14 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 	layouts := make([]Layout, len(agg.Fields))
 
 	// Second pass: evaluate alignment/size/padding
+
+	// Simplified case: enum
+	if agg.Kind == EnumKind {
+		return AggregateMeta{
+			Size:      enumSize,
+			Alignment: enumAlign,
+		}, nil
+	}
 
 	// Simplified case: union - info on the padding formula later
 	if agg.Kind == UnionKind {
@@ -276,6 +298,12 @@ func ExtractAggregates(fname, cont string, useCompiler bool) (Context, error) {
 
 	for name, node := range ast.Scope.Nodes {
 		switch def := node[0].(type) {
+		case *cc.EnumSpecifier:
+			qualName := def.Token.SrcStr() + " " + def.Token2.SrcStr()
+			ctx[qualName] = Aggregate{
+				Name: qualName,
+				Kind: EnumKind,
+			}
 		case *cc.StructOrUnionSpecifier:
 			currStruct := Aggregate{}
 			curr := def.StructDeclarationList
@@ -293,6 +321,8 @@ func ExtractAggregates(fname, cont string, useCompiler bool) (Context, error) {
 					kind = PointerPKind
 				case isArr:
 					kind = ArrayPKind
+				case strings.Contains(entryType, "enum "):
+					kind = EnumPKind
 				default:
 					kind = BasePKind
 				}
@@ -350,10 +380,15 @@ func getType(declList *cc.StructDeclarationList) string {
 	case typeSpec != nil && typeSpec.StructOrUnionSpecifier != nil:
 		sou := typeSpec.StructOrUnionSpecifier
 		baseType = sou.StructOrUnion.Token.SrcStr() + " " + sou.Token.SrcStr()
+	case typeSpec != nil && typeSpec.EnumSpecifier != nil:
+		es := typeSpec.EnumSpecifier
+		baseType = es.Token.SrcStr() + " " + es.Token2.SrcStr()
 	}
 
 	declr := declList.StructDeclaration.StructDeclaratorList.StructDeclarator
-	return extractQualifier(specQualList) + getPtrQual(declr) + baseType
+	qual := extractQualifier(specQualList)
+	ptrQual := getPtrQual(declr)
+	return qual + ptrQual + baseType
 }
 
 func extractQualifier(specQualList *cc.SpecifierQualifierList) string {

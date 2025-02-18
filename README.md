@@ -63,6 +63,7 @@ A series of flags can be used to specify the size of base types on your
 platform (e.g. char, short, int, long, etc.). These are the following:
 
 - ptr
+- enum
 - char
 - short
 - int
