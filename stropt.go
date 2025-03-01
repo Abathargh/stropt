@@ -14,6 +14,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"reflect"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -430,25 +431,44 @@ func debugVersion() {
 		logErrorMessage("could not create a config for the parser: %v", err)
 	}
 
+	// TODO add here a mock header for stdint types
 	srcs := []cc.Source{
 		{Name: "<predefined>", Value: config.Predefined},
 		{Name: "<builtin>", Value: cc.Builtin},
 		{Name: fn, Value: f},
 	}
 
-	ast, err := cc.Parse(config, srcs)
+	ast, err := cc.Translate(config, srcs)
 	if err != nil {
 		logError(err)
 	}
 
-	// Access the AST of the parsed translation unit.
-	fmt.Println("Parsed AST:")
-
-	for name, node := range ast.Scope.Nodes {
+	for name, nodes := range ast.Scope.Nodes {
 		if strings.HasPrefix(name, "__") {
 			continue
 		}
-		fmt.Printf("%s: %v\n", name, node)
+
+		switch node := nodes[0].(type) {
+		case *cc.Declarator:
+			switch typ := node.Type().(type) {
+			case *cc.StructType:
+				fmt.Printf("%s: %v\n", name, typ.FieldByIndex(0).Name())
+			case *cc.UnionType:
+			case *cc.EnumType:
+			}
+		case *cc.StructOrUnionSpecifier:
+			if typ, isStruct := node.Type().(*cc.StructType); isStruct {
+				fmt.Printf("%s: %v\n", name, typ.FieldByIndex(0).Name())
+			} else {
+				fmt.Printf("strou %s: %v\n", name, reflect.TypeOf(node.Type()))
+			}
+		case *cc.EnumSpecifier:
+			if typ, isStruct := node.Type().(*cc.StructType); isStruct {
+				fmt.Printf("%s: %v\n", name, typ.FieldByIndex(0).Name())
+			} else {
+				fmt.Printf("es %s: %v\n", name, reflect.TypeOf(node.Type()))
+			}
+		}
 	}
 }
 

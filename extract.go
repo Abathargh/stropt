@@ -262,6 +262,37 @@ func (ctx Context) Optimize(name string, meta AggregateMeta) (AggregateMeta, err
 	return ctx.ResolveMeta(name)
 }
 
+func (ctx Context) addEnum(name string, typedef bool) {
+	var qualName string
+	if typedef {
+		qualName = name
+	} else {
+		qualName = fmt.Sprintf("enum %s", name)
+	}
+
+	entry := Aggregate{
+		Name: qualName,
+		Kind: EnumKind,
+	}
+	ctx[qualName] = entry
+	ctx[name] = entry
+}
+
+func (ctx Context) addStruct(name string, str *cc.StructType, typedef bool) {
+	currStruct := Aggregate{}
+	for i := range str.NumFields() {
+		field := str.FieldByIndex(i)
+
+		currStruct.Fields = append(currStruct.Fields, Field{
+			Name: field.Name(),
+			Type: field.Type().String(),
+		})
+	}
+}
+func (ctx Context) addUnion(name string, str *cc.UnionType, typedef bool) {
+
+}
+
 func ExtractAggregates(fname, cont string, useCompiler bool) (Context, error) {
 	var err error
 	config := &cc.Config{
@@ -285,7 +316,7 @@ func ExtractAggregates(fname, cont string, useCompiler bool) (Context, error) {
 		srcs = append(srcs, cc.Source{Name: "<builtin>", Value: cc.Builtin})
 	}
 
-	ast, err := cc.Parse(config, srcs)
+	ast, err := cc.Translate(config, srcs)
 	if err != nil {
 		if strings.Contains(err.Error(), "include") {
 			return nil, fmt.Errorf("%w:\n%s Original error: \n\t%w", ErrParse,
@@ -296,58 +327,28 @@ func ExtractAggregates(fname, cont string, useCompiler bool) (Context, error) {
 
 	var ctx = make(Context)
 
-	for name, node := range ast.Scope.Nodes {
-		switch def := node[0].(type) {
-		case *cc.EnumSpecifier:
-			qualName := def.Token.SrcStr() + " " + def.Token2.SrcStr()
-			ctx[qualName] = Aggregate{
-				Name: qualName,
-				Kind: EnumKind,
+	for name, nodes := range ast.Scope.Nodes {
+		switch node := nodes[0].(type) {
+		case *cc.Declarator:
+			switch typ := node.Type().(type) {
+			case *cc.StructType:
+				ctx.addStruct(name, typ, true)
+			case *cc.UnionType:
+				ctx.addUnion(name, typ, true)
+			case *cc.EnumType:
+				ctx.addEnum(name, true)
 			}
 		case *cc.StructOrUnionSpecifier:
-			currStruct := Aggregate{}
-			curr := def.StructDeclarationList
-			for ; curr != nil; curr = curr.StructDeclarationList {
-				declList := curr.StructDeclaration
-				declarator := declList.StructDeclaratorList.StructDeclarator
-
-				entryType := getType(curr)
-				entryName, isPtr := getField(declarator)
-				arraySize, isArr := isArray(declarator)
-
-				var kind PrimitiveKind
-				switch {
-				case isPtr:
-					kind = PointerPKind
-				case isArr:
-					kind = ArrayPKind
-				case strings.Contains(entryType, "enum "):
-					kind = EnumPKind
-				default:
-					kind = BasePKind
-				}
-
-				currStruct.Fields = append(currStruct.Fields, Field{
-					Name:      entryName,
-					Type:      entryType,
-					ArraySize: arraySize,
-					Kind:      kind,
-				})
+			switch typ := node.Type().(type) {
+			case *cc.StructType:
+				ctx.addStruct(name, typ, false)
+			case *cc.UnionType:
+				ctx.addUnion(name, typ, false)
 			}
-
-			var qualName string
-
-			switch {
-			case isUnion(def.StructOrUnion):
-				currStruct.Kind = UnionKind
-				qualName = "union " + name
-			default:
-				currStruct.Kind = StructKind
-				qualName = "struct " + name
+		case *cc.EnumSpecifier:
+			if _, isEnum := node.Type().(*cc.EnumType); isEnum {
+				ctx.addEnum(name, false)
 			}
-
-			currStruct.Name = qualName
-			ctx[qualName] = currStruct
 		}
 	}
 	return ctx, nil
