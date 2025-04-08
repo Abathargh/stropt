@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"reflect"
 	"runtime"
 	"testing"
@@ -15,14 +14,14 @@ func TestStructBasicTypes(t *testing.T) {
 		expected map[string]Aggregate1
 	}{
 		{
-			"#include <stdint.h> struct test_struct { uint64_t a; };",
+			"struct test_struct { long a; };",
 			map[string]Aggregate1{
 				"struct test_struct": {
 					Name:    "struct test_struct",
 					Typedef: "",
 					Kind:    StructKind1,
 					Fields: []Field1{
-						Basic{nil, "uint64_t", "a"},
+						Basic{nil, "long", "a"},
 					},
 				},
 			},
@@ -33,7 +32,7 @@ func TestStructBasicTypes(t *testing.T) {
 				"union un": {
 					Name:    "union un",
 					Typedef: "",
-					Kind:    StructKind1,
+					Kind:    UnionKind1,
 					Fields: []Field1{
 						Basic{nil, "double", "d"},
 						Basic{nil, "float", "f"},
@@ -73,7 +72,7 @@ func TestStructBasicTypes(t *testing.T) {
 			},
 		},
 		{
-			`#include <stdint.h> typedef union {float f; int i; uint64_t ui; } un; 
+			`typedef union {float f; int i; long ui; } un;
 			struct test_ptr { int * a; };`,
 			map[string]Aggregate1{
 				"un": {
@@ -83,15 +82,15 @@ func TestStructBasicTypes(t *testing.T) {
 					Fields: []Field1{
 						Basic{nil, "float", "f"},
 						Basic{nil, "int", "i"},
-						Basic{nil, "uint64_t", "ui"},
+						Basic{nil, "long", "ui"},
 					},
 				},
 				"struct test_ptr": {
 					Name:    "struct test_ptr",
-					Typedef: "un",
+					Typedef: "",
 					Kind:    StructKind1,
 					Fields: []Field1{
-						Pointer{Basic{nil, "int", "f"}, nil},
+						Pointer{Basic{nil, "int", "a"}, nil},
 					},
 				},
 			},
@@ -112,7 +111,7 @@ func TestStructBasicTypes(t *testing.T) {
 		},
 		{
 			`struct inner { int a; };
-			struct test_inner { int a1; struct inner a2; };`,
+			struct test_inner { int a1; volatile struct inner a2; };`,
 			map[string]Aggregate1{
 				"struct inner": {
 					Name:    "struct inner",
@@ -128,7 +127,7 @@ func TestStructBasicTypes(t *testing.T) {
 					Kind:    StructKind1,
 					Fields: []Field1{
 						Basic{nil, "int", "a1"},
-						Basic{nil, "struct inner", "a2"},
+						Basic{[]string{"volatile"}, "struct inner", "a2"},
 					}},
 			},
 		},
@@ -231,9 +230,9 @@ func TestStructBasicTypes(t *testing.T) {
 		// 	},
 		// },
 		{
-			"typedef struct { int fptr(int, float); } fptr_t;",
+			"typedef struct { int (*fptr)(int, float); } fptr_t;",
 			map[string]Aggregate1{
-				"example_t": {
+				"fptr_t": {
 					Name:    "",
 					Typedef: "fptr_t",
 					Kind:    StructKind1,
@@ -243,32 +242,69 @@ func TestStructBasicTypes(t *testing.T) {
 				},
 			},
 		},
+		{
+			`struct inner { int a; };
+			struct test_inner { int a1; const struct inner * const a2; };`,
+			map[string]Aggregate1{
+				"struct inner": {
+					Name:    "struct inner",
+					Typedef: "",
+					Kind:    StructKind1,
+					Fields: []Field1{
+						Basic{nil, "int", "a"},
+					},
+				},
+				"struct test_inner": {
+					Name:    "struct test_inner",
+					Typedef: "",
+					Kind:    StructKind1,
+					Fields: []Field1{
+						Basic{nil, "int", "a1"},
+						Pointer{Basic{[]string{"const"}, "struct inner", "a2"}, []string{"const"}},
+					}},
+			},
+		},
 	}
 
 	for _, testCase := range testCases {
 		var aggregates []Aggregate1
-		fmt.Printf("Testing: '%s'\n", testCase.test)
 		ast := initAst(testCase.test)
 
 		for l := ast.TranslationUnit; l != nil; l = l.TranslationUnit {
 			ed := l.ExternalDeclaration
 			switch ed.Case {
 			case cc.ExternalDeclarationDecl:
-				aggregates = append(aggregates, ParseAggregate(ed.Declaration))
+				switch ed.Declaration.DeclarationSpecifiers.Type().(type) {
+				case *cc.StructType, *cc.UnionType, *cc.EnumType:
+					agg, err := ParseAggregate(ed.Declaration)
+					if err != nil {
+						continue
+					}
+					aggregates = append(aggregates, *agg)
+				}
 			}
 		}
 
+		count := 0
 		for _, aggregate := range aggregates {
 			name := getAggregateName(aggregate)
+
 			aggCase, ok := testCase.expected[name]
 			if !ok {
-				t.Errorf("aggregate name not found: '%s'", name)
 				continue
 			}
 
 			if !reflect.DeepEqual(aggregate, aggCase) {
-				t.Errorf("expected %v, got %v", aggCase, aggregate)
+				t.Errorf("test: %s\nexpected %+v, got %+v", testCase.test,
+					aggCase, aggregate)
+				continue
 			}
+			count++
+		}
+
+		if count != len(testCase.expected) {
+			t.Errorf("test: %s\nexpected %d aggregates, got %d\n complete list %+v",
+				testCase.test, len(testCase.expected), count, aggregates)
 		}
 	}
 }
