@@ -11,16 +11,16 @@ import (
 func TestStructBasicTypes(t *testing.T) {
 	testCases := []struct {
 		test     string
-		expected map[string]Aggregate1
+		expected map[string]Aggregate
 	}{
 		{
 			"struct test_struct { long a; };",
-			map[string]Aggregate1{
+			map[string]Aggregate{
 				"struct test_struct": {
 					Name:    "struct test_struct",
 					Typedef: "",
-					Kind:    StructKind1,
-					Fields: []Field1{
+					Kind:    StructKind,
+					Fields: []Field{
 						Basic{nil, "long", "a"},
 					},
 				},
@@ -28,12 +28,12 @@ func TestStructBasicTypes(t *testing.T) {
 		},
 		{
 			"union un { double d; float f; unsigned char uc; };",
-			map[string]Aggregate1{
+			map[string]Aggregate{
 				"union un": {
 					Name:    "union un",
 					Typedef: "",
-					Kind:    UnionKind1,
-					Fields: []Field1{
+					Kind:    UnionKind,
+					Fields: []Field{
 						Basic{nil, "double", "d"},
 						Basic{nil, "float", "f"},
 						Basic{[]string{"unsigned"}, "char", "uc"},
@@ -43,12 +43,12 @@ func TestStructBasicTypes(t *testing.T) {
 		},
 		{
 			"struct test_mul { int a; float b; double d; long long l; };",
-			map[string]Aggregate1{
+			map[string]Aggregate{
 				"struct test_mul": {
 					Name:    "struct test_mul",
 					Typedef: "",
-					Kind:    StructKind1,
-					Fields: []Field1{
+					Kind:    StructKind,
+					Fields: []Field{
 						Basic{nil, "int", "a"},
 						Basic{nil, "float", "b"},
 						Basic{nil, "double", "d"},
@@ -59,12 +59,12 @@ func TestStructBasicTypes(t *testing.T) {
 		},
 		{
 			"struct test_ptr { int * a; int arr[100]; };",
-			map[string]Aggregate1{
+			map[string]Aggregate{
 				"struct test_ptr": {
 					Name:    "struct test_ptr",
 					Typedef: "",
-					Kind:    StructKind1,
-					Fields: []Field1{
+					Kind:    StructKind,
+					Fields: []Field{
 						Pointer{Basic{nil, "int", "a"}, nil},
 						Array{Basic{nil, "int", "arr"}, 100},
 					},
@@ -74,12 +74,12 @@ func TestStructBasicTypes(t *testing.T) {
 		{
 			`typedef union {float f; int i; long ui; } un;
 			struct test_ptr { int * a; };`,
-			map[string]Aggregate1{
+			map[string]Aggregate{
 				"un": {
 					Name:    "",
 					Typedef: "un",
-					Kind:    UnionKind1,
-					Fields: []Field1{
+					Kind:    UnionKind,
+					Fields: []Field{
 						Basic{nil, "float", "f"},
 						Basic{nil, "int", "i"},
 						Basic{nil, "long", "ui"},
@@ -88,8 +88,8 @@ func TestStructBasicTypes(t *testing.T) {
 				"struct test_ptr": {
 					Name:    "struct test_ptr",
 					Typedef: "",
-					Kind:    StructKind1,
-					Fields: []Field1{
+					Kind:    StructKind,
+					Fields: []Field{
 						Pointer{Basic{nil, "int", "a"}, nil},
 					},
 				},
@@ -97,12 +97,12 @@ func TestStructBasicTypes(t *testing.T) {
 		},
 		{
 			"struct test_ptr { const int * a; const int * const b; };",
-			map[string]Aggregate1{
+			map[string]Aggregate{
 				"struct test_ptr": {
 					Name:    "struct test_ptr",
 					Typedef: "",
-					Kind:    StructKind1,
-					Fields: []Field1{
+					Kind:    StructKind,
+					Fields: []Field{
 						Pointer{Basic{[]string{"const"}, "int", "a"}, nil},
 						Pointer{Basic{[]string{"const"}, "int", "b"}, []string{"const"}},
 					},
@@ -112,20 +112,20 @@ func TestStructBasicTypes(t *testing.T) {
 		{
 			`struct inner { int a; };
 			struct test_inner { int a1; volatile struct inner a2; };`,
-			map[string]Aggregate1{
+			map[string]Aggregate{
 				"struct inner": {
 					Name:    "struct inner",
 					Typedef: "",
-					Kind:    StructKind1,
-					Fields: []Field1{
+					Kind:    StructKind,
+					Fields: []Field{
 						Basic{nil, "int", "a"},
 					},
 				},
 				"struct test_inner": {
 					Name:    "struct test_inner",
 					Typedef: "",
-					Kind:    StructKind1,
-					Fields: []Field1{
+					Kind:    StructKind,
+					Fields: []Field{
 						Basic{nil, "int", "a1"},
 						Basic{[]string{"volatile"}, "struct inner", "a2"},
 					}},
@@ -158,12 +158,12 @@ func TestStructBasicTypes(t *testing.T) {
 		// },
 		{
 			"typedef struct exs { float disc; double d; char data[50]; } example_t;",
-			map[string]Aggregate1{
+			map[string]Aggregate{
 				"example_t": {
 					Name:    "struct exs",
 					Typedef: "example_t",
-					Kind:    StructKind1,
-					Fields: []Field1{
+					Kind:    StructKind,
+					Fields: []Field{
 						Basic{nil, "float", "disc"},
 						Basic{nil, "double", "d"},
 						Array{Basic{nil, "char", "data"}, 50},
@@ -173,12 +173,12 @@ func TestStructBasicTypes(t *testing.T) {
 		},
 		{
 			"typedef union { double d; char c; } example_u;",
-			map[string]Aggregate1{
+			map[string]Aggregate{
 				"example_u": {
 					Name:    "",
 					Typedef: "example_u",
-					Kind:    UnionKind1,
-					Fields: []Field1{
+					Kind:    UnionKind,
+					Fields: []Field{
 						Basic{nil, "double", "d"},
 						Basic{nil, "char", "c"},
 					},
@@ -187,12 +187,12 @@ func TestStructBasicTypes(t *testing.T) {
 		},
 		{
 			"typedef union exu { double d; char c; } example_u;",
-			map[string]Aggregate1{
+			map[string]Aggregate{
 				"example_u": {
 					Name:    "union exu",
 					Typedef: "example_u",
-					Kind:    UnionKind1,
-					Fields: []Field1{
+					Kind:    UnionKind,
+					Fields: []Field{
 						Basic{nil, "double", "d"},
 						Basic{nil, "char", "c"},
 					},
@@ -231,12 +231,12 @@ func TestStructBasicTypes(t *testing.T) {
 		// },
 		{
 			"typedef struct { int (*fptr)(int, float); } fptr_t;",
-			map[string]Aggregate1{
+			map[string]Aggregate{
 				"fptr_t": {
 					Name:    "",
 					Typedef: "fptr_t",
-					Kind:    StructKind1,
-					Fields: []Field1{
+					Kind:    StructKind,
+					Fields: []Field{
 						FuncPointer{"int", "fptr", []string{"int", "float"}},
 					},
 				},
@@ -245,20 +245,20 @@ func TestStructBasicTypes(t *testing.T) {
 		{
 			`struct inner { int a; };
 			struct test_inner { int a1; const struct inner * const a2; };`,
-			map[string]Aggregate1{
+			map[string]Aggregate{
 				"struct inner": {
 					Name:    "struct inner",
 					Typedef: "",
-					Kind:    StructKind1,
-					Fields: []Field1{
+					Kind:    StructKind,
+					Fields: []Field{
 						Basic{nil, "int", "a"},
 					},
 				},
 				"struct test_inner": {
 					Name:    "struct test_inner",
 					Typedef: "",
-					Kind:    StructKind1,
-					Fields: []Field1{
+					Kind:    StructKind,
+					Fields: []Field{
 						Basic{nil, "int", "a1"},
 						Pointer{Basic{[]string{"const"}, "struct inner", "a2"}, []string{"const"}},
 					}},
@@ -267,7 +267,7 @@ func TestStructBasicTypes(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		var aggregates []Aggregate1
+		var aggregates []Aggregate
 		ast := initAst(testCase.test)
 
 		for l := ast.TranslationUnit; l != nil; l = l.TranslationUnit {
@@ -322,7 +322,7 @@ func initAst(data string) *cc.AST {
 	return ast
 }
 
-func getAggregateName(agg Aggregate1) string {
+func getAggregateName(agg Aggregate) string {
 	if agg.Typedef != "" {
 		return agg.Typedef
 	}

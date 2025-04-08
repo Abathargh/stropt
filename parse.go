@@ -18,12 +18,12 @@ const (
 	FunctionPointerKind
 )
 
-type AggregateKind1 uint
+type AggregateKind uint
 
 const (
-	StructKind1 = iota
-	UnionKind1
-	EnumKind1
+	StructKind = iota
+	UnionKind
+	EnumKind
 )
 
 type Basic struct {
@@ -102,15 +102,15 @@ func (ee EnumEntry) Type() string {
 	return string(ee)
 }
 
-type Field1 interface {
+type Field interface {
 	Type() string
 }
 
-type Aggregate1 struct {
+type Aggregate struct {
 	Name    string
 	Typedef string
-	Kind    AggregateKind1
-	Fields  []Field1
+	Kind    AggregateKind
+	Fields  []Field
 }
 
 var (
@@ -131,8 +131,8 @@ func getTypedefToken(decl *cc.Declaration) *cc.Token {
 }
 
 // ParseAggregate parse a declaration tree in search for an Aggregate
-func ParseAggregate(decl *cc.Declaration) (*Aggregate1, error) {
-	var ret Aggregate1
+func ParseAggregate(decl *cc.Declaration) (*Aggregate, error) {
+	var ret Aggregate
 
 	specs := decl.DeclarationSpecifiers
 
@@ -166,11 +166,11 @@ func ParseAggregate(decl *cc.Declaration) (*Aggregate1, error) {
 
 	switch aggregateKind {
 	case "struct":
-		ret.Kind = StructKind1
+		ret.Kind = StructKind
 	case "union":
-		ret.Kind = UnionKind1
+		ret.Kind = UnionKind
 	case "enum":
-		ret.Kind = EnumKind1
+		ret.Kind = EnumKind
 	}
 
 	// if this is not a anonymous typedef'd struct, we get the name from here
@@ -187,7 +187,7 @@ func ParseAggregate(decl *cc.Declaration) (*Aggregate1, error) {
 	return &ret, nil
 }
 
-func ParseField(fieldDecl *cc.StructDeclaration) Field1 {
+func ParseField(fieldDecl *cc.StructDeclaration) Field {
 	qualifiers, typeName := parseQualifiers(fieldDecl)
 	name, meta, kind := parseName(fieldDecl.StructDeclaratorList)
 
@@ -205,7 +205,7 @@ func ParseField(fieldDecl *cc.StructDeclaration) Field1 {
 	}
 }
 
-func GetIdentifiers(aggregate *Aggregate1) []string {
+func GetIdentifiers(aggregate *Aggregate) []string {
 	var identifiers []string
 
 	if aggregate.Name != "" {
