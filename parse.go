@@ -193,24 +193,33 @@ func ParseAggregate(decl *cc.Declaration) (*Aggregate, error) {
 	return &ret, nil
 }
 
-// GetIdentifiers returns the identifier with which a user can refer to the
+// GetAggregateNames returns the identifier with which a user can refer to the
 // passed aggregate.
 // If the aggregate is not anonymous, then this function returns both the
 // fully qualified name e.g. `struct foo`, and just the unqualified aggregate
 // name, e.g. `foo`. If this is a typedef'd type, it returns the typedef name
 // for the aggregate. Any combination of the two is possible, but not having
 // any name should not be possible.
-func GetIdentifiers(aggregate *Aggregate) []string {
-	var identifiers []string
+func GetAggregateNames(aggregate *Aggregate) []string {
+	const (
+		maxNames  = 3
+		structTag = "struct "
+	)
 
-	if aggregate.Name != "" {
-		identifiers = append(identifiers, aggregate.Name)
-	}
+	names := make([]string, 0, maxNames)
 
 	if aggregate.Typedef != "" {
-		identifiers = append(identifiers, aggregate.Typedef)
+		names = append(names, aggregate.Typedef)
 	}
-	return identifiers
+
+	if aggregate.Name != "" {
+		structIndex := strings.Index(aggregate.Name, structTag)
+		noStructName := aggregate.Name[structIndex+len(structTag):]
+		names = append(names, aggregate.Name)
+		names = append(names, noStructName)
+	}
+
+	return names
 }
 
 // parseField is a builder for the Field type. It constructs and returns a
