@@ -28,6 +28,7 @@ const (
 	EnumKind
 )
 
+// An Aggregate represents a C aggregate type (struct, union, enum).
 type Aggregate struct {
 	Name    string
 	Typedef string
