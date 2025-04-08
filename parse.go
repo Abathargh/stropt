@@ -9,6 +9,7 @@ import (
 	"modernc.org/cc/v4"
 )
 
+// FieldKind represents the kind of field in an aggregate
 type FieldKind uint
 
 const (
@@ -18,6 +19,7 @@ const (
 	FunctionPointerKind
 )
 
+// AggregateKind represents the kind of aggregate
 type AggregateKind uint
 
 const (
@@ -26,12 +28,29 @@ const (
 	EnumKind
 )
 
+type Aggregate struct {
+	Name    string
+	Typedef string
+	Kind    AggregateKind
+	Fields  []Field
+}
+
+// A Field is an entry that can be found within an aggregate, be it a struct
+// or a union. It defines the Type method, useful to get its type description
+// as a string.
+type Field interface {
+	Type() string
+}
+
+// A Basic field is a field of either a primitive type, or an aggregate type.
+// It describes a C value type.
 type Basic struct {
 	Qualifiers []string
 	TypeName   string
 	Name       string
 }
 
+// Type returns the type of the Basic field.
 func (b Basic) Type() string {
 	var builder strings.Builder
 	for _, qualifier := range b.Qualifiers {
@@ -42,11 +61,14 @@ func (b Basic) Type() string {
 	return builder.String()
 }
 
+// A Pointer is an aggregate field which is a pointer to any Basic type. It
+// describes a C pointer type.
 type Pointer struct {
 	Basic
 	PointerQualifiers []string
 }
 
+// Type returns the type of the Pointer field.
 func (p Pointer) Type() string {
 	var builder strings.Builder
 	for _, qualifier := range p.Qualifiers {
@@ -58,11 +80,14 @@ func (p Pointer) Type() string {
 	return builder.String()
 }
 
+// An Array is an aggregate field which is an array to any Basic type. It
+// describes a C array type.
 type Array struct {
 	Basic
 	Elements int
 }
 
+// Type returns the type of the Array field.
 func (a Array) Type() string {
 	var builder strings.Builder
 	for _, qualifier := range a.Qualifiers {
@@ -76,12 +101,14 @@ func (a Array) Type() string {
 	return builder.String()
 }
 
+// An FuncPointer is an aggregate field which describes a C function pointer.
 type FuncPointer struct {
 	ReturnType string
 	Name       string
 	Args       []string
 }
 
+// Type returns the type of the FuncPointer field.
 func (fp FuncPointer) Type() string {
 	var builder strings.Builder
 	builder.WriteString(fp.ReturnType)
@@ -102,35 +129,13 @@ func (ee EnumEntry) Type() string {
 	return string(ee)
 }
 
-type Field interface {
-	Type() string
-}
-
-type Aggregate struct {
-	Name    string
-	Typedef string
-	Kind    AggregateKind
-	Fields  []Field
-}
-
 var (
-	ErrNotanAggregate = errors.New("not an aggregate")
+	ErrNotAnAggregate = errors.New("not an aggregate")
 )
 
-func getTypedefToken(decl *cc.Declaration) *cc.Token {
-	if decl.DeclarationSpecifiers.Case == cc.DeclarationSpecifiersStorage {
-		// anonymous typedef'd enum case: this is found somewhere else
-		var (
-			declList   = decl.InitDeclaratorList
-			initDecl   = declList.InitDeclarator
-			directDecl = initDecl.Declarator.DirectDeclarator
-		)
-		return &directDecl.Token
-	}
-	return &decl.InitDeclaratorList.Token
-}
-
-// ParseAggregate parse a declaration tree in search for an Aggregate
+// ParseAggregate parses a declaration tree in search for an Aggregate.
+// If it does find one, it returns a pointer to it, otherwise fails reporting
+// an error and returning a nil aggregate.
 func ParseAggregate(decl *cc.Declaration) (*Aggregate, error) {
 	var ret Aggregate
 
@@ -149,13 +154,13 @@ func ParseAggregate(decl *cc.Declaration) (*Aggregate, error) {
 
 	// at this point, a type specifier must be present...
 	if specs.TypeSpecifier == nil {
-		return nil, ErrNotanAggregate
+		return nil, ErrNotAnAggregate
 	}
 
 	// ...as it will lead us to the struct/union specifier
 	aggrSpec := specs.TypeSpecifier.StructOrUnionSpecifier
 	if aggrSpec == nil {
-		return nil, ErrNotanAggregate
+		return nil, ErrNotAnAggregate
 	}
 
 	// check which kind of aggregate this is, and its name
@@ -181,13 +186,35 @@ func ParseAggregate(decl *cc.Declaration) (*Aggregate, error) {
 	// let us extract the fields and fully qualify them
 	declList := aggrSpec.StructDeclarationList
 	for ; declList != nil; declList = declList.StructDeclarationList {
-		ret.Fields = append(ret.Fields, ParseField(declList.StructDeclaration))
+		ret.Fields = append(ret.Fields, parseField(declList.StructDeclaration))
 	}
 
 	return &ret, nil
 }
 
-func ParseField(fieldDecl *cc.StructDeclaration) Field {
+// GetIdentifiers returns the identifier with which a user can refer to the
+// passed aggregate.
+// If the aggregate is not anonymous, then this function returns both the
+// fully qualified name e.g. `struct foo`, and just the unqualified aggregate
+// name, e.g. `foo`. If this is a typedef'd type, it returns the typedef name
+// for the aggregate. Any combination of the two is possible, but not having
+// any name should not be possible.
+func GetIdentifiers(aggregate *Aggregate) []string {
+	var identifiers []string
+
+	if aggregate.Name != "" {
+		identifiers = append(identifiers, aggregate.Name)
+	}
+
+	if aggregate.Typedef != "" {
+		identifiers = append(identifiers, aggregate.Typedef)
+	}
+	return identifiers
+}
+
+// parseField is a builder for the Field type. It constructs and returns a
+// Field type described by the passed declaration.
+func parseField(fieldDecl *cc.StructDeclaration) Field {
 	qualifiers, typeName := parseQualifiers(fieldDecl)
 	name, meta, kind := parseName(fieldDecl.StructDeclaratorList)
 
@@ -205,19 +232,9 @@ func ParseField(fieldDecl *cc.StructDeclaration) Field {
 	}
 }
 
-func GetIdentifiers(aggregate *Aggregate) []string {
-	var identifiers []string
-
-	if aggregate.Name != "" {
-		identifiers = append(identifiers, aggregate.Name)
-	}
-
-	if aggregate.Typedef != "" {
-		identifiers = append(identifiers, aggregate.Typedef)
-	}
-	return identifiers
-}
-
+// parseQualifiers checks for qualifiers on the passed declaration and returns
+// them, alongside with the type of the declaration, which is contained as the
+// last qualifier in the declaration.
 func parseQualifiers(fieldDecl *cc.StructDeclaration) ([]string, string) {
 	var (
 		qualifierId string
@@ -226,9 +243,7 @@ func parseQualifiers(fieldDecl *cc.StructDeclaration) ([]string, string) {
 
 	list := fieldDecl.SpecifierQualifierList
 	for ; list != nil; list = list.SpecifierQualifierList {
-		listCase := list.Case
-
-		switch listCase {
+		switch list.Case {
 		case cc.SpecifierQualifierListTypeQual:
 			qual := list.TypeQualifier
 			qualifierId = qual.Token.SrcStr()
@@ -241,10 +256,10 @@ func parseQualifiers(fieldDecl *cc.StructDeclaration) ([]string, string) {
 				qualifierId = qual.Token.SrcStr()
 			}
 		}
-
 		qualifiers = append(qualifiers, qualifierId)
 	}
 
+	// this is the index of the type of the declaration
 	lastIdx := len(qualifiers) - 1
 
 	if len(qualifiers) > 1 {
@@ -254,19 +269,27 @@ func parseQualifiers(fieldDecl *cc.StructDeclaration) ([]string, string) {
 	return nil, qualifiers[lastIdx]
 }
 
-// parseStructOrUnionQualifier
+// parseStructOrUnionQualifier parses the aggregate qualifier in case the
+// type is a fully qualified aggregate type.
 func parseStructOrUnionQualifier(spec *cc.StructOrUnionSpecifier) string {
 	qualifierKind := spec.StructOrUnion.Token.SrcStr()
 	qualifierName := spec.Token.SrcStr()
 	return fmt.Sprintf("%s %s", qualifierKind, qualifierName)
 }
 
+// A FieldMeta struct contains information related to the parsed field. It is
+// populated differently based on which kind of field is encountered.
 type FieldMeta struct {
 	ptrQualifiers []string
 	argsTypes     []string
 	arraySize     int
 }
 
+// parseName parses a declaratoer list in search of the field name. At this
+// point in the parsing, it also extracts the kind for the Field which is
+// being parsed, and any other metadata that may be available within the
+// declarator list. This is a list of the pointer qualifiers, the argument
+// types for function pointers, and array sizes.
 func parseName(list *cc.StructDeclaratorList) (string, FieldMeta, FieldKind) {
 	var (
 		structDecl = list.StructDeclarator
@@ -296,6 +319,8 @@ func parseName(list *cc.StructDeclaratorList) (string, FieldMeta, FieldKind) {
 	return fieldName, FieldMeta{}, ValueKind
 }
 
+// parsePointerQualifiers extracts the pointer qualifiers from the pointer
+// description.
 func parsePointerQualifiers(ptr *cc.Pointer) []string {
 	var qualifiers []string
 
@@ -307,6 +332,8 @@ func parsePointerQualifiers(ptr *cc.Pointer) []string {
 	return qualifiers
 }
 
+// parseArrayName parses the direct declarator for the array type and returns
+// its name, alongside with its size.
 func parseArrayName(direct *cc.DirectDeclarator) (string, int) {
 	// AssignmentExpression not nil if this is being called, this will be a
 	// PrimaryExpression, holding the array size
@@ -317,6 +344,8 @@ func parseArrayName(direct *cc.DirectDeclarator) (string, int) {
 	return name, size
 }
 
+// parseFunctionPointerName extracts the function pointer name and argument
+// types from the passed direct declarator.
 func parseFunctionPointerName(direct *cc.DirectDeclarator) (string, []string) {
 	var (
 		evenMoreDirect             = direct.DirectDeclarator
@@ -329,6 +358,7 @@ func parseFunctionPointerName(direct *cc.DirectDeclarator) (string, []string) {
 	return fptrName, args
 }
 
+// parseParameterList parses the parameter list for a function pointer field.
 func parseParameterList(typeList *cc.ParameterTypeList) []string {
 	var args []string
 	for list := typeList.ParameterList; list != nil; list = list.ParameterList {
@@ -340,4 +370,18 @@ func parseParameterList(typeList *cc.ParameterTypeList) []string {
 		args = append(args, argType)
 	}
 	return args
+}
+
+// getTypedefToken extracts the typedef token from the passed declaration.
+func getTypedefToken(decl *cc.Declaration) *cc.Token {
+	if decl.DeclarationSpecifiers.Case == cc.DeclarationSpecifiersStorage {
+		// anonymous typedef'd enum case: this is found somewhere else
+		var (
+			declList   = decl.InitDeclaratorList
+			initDecl   = declList.InitDeclarator
+			directDecl = initDecl.Declarator.DirectDeclarator
+		)
+		return &directDecl.Token
+	}
+	return &decl.InitDeclaratorList.Token
 }
