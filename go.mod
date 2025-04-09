@@ -1,6 +1,6 @@
 module github.com/Abathargh/stropt
 
-go 1.23.0
+go 1.24.1
 
 require (
 	github.com/charmbracelet/lipgloss v1.0.0
