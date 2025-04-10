@@ -41,6 +41,8 @@ type Aggregate struct {
 // as a string.
 type Field interface {
 	Type() string
+	Declaration() string
+	UnqualifiedType() string
 }
 
 // A Basic field is a field of either a primitive type, or an aggregate type.
@@ -51,6 +53,14 @@ type Basic struct {
 	Name       string
 }
 
+var (
+	keyQualifiers = map[string]struct{}{
+		"signed":   {},
+		"unsigned": {},
+		"long":     {},
+	}
+)
+
 // Type returns the type of the Basic field.
 func (b Basic) Type() string {
 	var builder strings.Builder
@@ -60,6 +70,26 @@ func (b Basic) Type() string {
 	}
 	builder.WriteString(b.TypeName)
 	return builder.String()
+}
+
+// Declaration returns the fully qualified name for the field. For a basic
+// field, that's just its name.
+func (b Basic) Declaration() string {
+	return b.Name
+}
+
+// UnqualifiedType returns the underlying type of the field without qualifiers
+// that only affect access/storage. Signedness and `longness` are kept.
+func (b Basic) UnqualifiedType() string {
+	var unqualType []string
+	for idx, qual := range b.Qualifiers {
+		if _, ok := keyQualifiers[qual]; ok || idx == len(b.Qualifiers)-1 {
+			unqualType = append(unqualType, qual)
+		}
+	}
+
+	unqualType = append(unqualType, b.TypeName)
+	return strings.Join(unqualType, " ")
 }
 
 // A Pointer is an aggregate field which is a pointer to any Basic type. It
@@ -81,6 +111,18 @@ func (p Pointer) Type() string {
 	return builder.String()
 }
 
+// UnqualifiedType returns the underlying type of the field without qualifiers
+// that only affect access/storage. Signedness and `longness` are kept.
+func (p Pointer) UnqualifiedType() string {
+	return p.Basic.UnqualifiedType()
+}
+
+// Declaration returns the fully qualified name for the field. For a Pointer
+// field, that's just its name.
+func (p Pointer) Declaration() string {
+	return p.Name
+}
+
 // An Array is an aggregate field which is an array to any Basic type. It
 // describes a C array type.
 type Array struct {
@@ -100,6 +142,18 @@ func (a Array) Type() string {
 	builder.WriteString(strconv.Itoa(a.Elements))
 	builder.WriteRune(']')
 	return builder.String()
+}
+
+// UnqualifiedType returns the underlying type of the field without qualifiers
+// that only affect access/storage. Signedness and `longness` are kept.
+func (a Array) UnqualifiedType() string {
+	return a.Basic.UnqualifiedType()
+}
+
+// Declaration returns the fully qualified name for the field. For an Array
+// field, that's its name and size.
+func (a Array) Declaration() string {
+	return fmt.Sprintf("%s[%d]", a.Name, a.Elements)
 }
 
 // An FuncPointer is an aggregate field which describes a C function pointer.
@@ -124,10 +178,41 @@ func (fp FuncPointer) Type() string {
 	return builder.String()
 }
 
+func (fp FuncPointer) UnqualifiedType() string {
+	return fp.Type()
+}
+
+// Declaration returns the fully qualified name for the field. For a
+// FuncPointer field, that's its name and argument list.
+func (f FuncPointer) Declaration() string {
+	var builder strings.Builder
+
+	builder.WriteString(f.Name)
+
+	for idx, arg := range f.Args {
+		builder.WriteString(arg)
+		if idx != len(f.Args)-1 {
+			builder.WriteString(", ")
+		}
+	}
+
+	return builder.String()
+}
+
 type EnumEntry string
 
 func (ee EnumEntry) Type() string {
 	return string(ee)
+}
+
+func (ee EnumEntry) UnqualifiedType() string {
+	return string(ee)
+}
+
+// Declaration returns the fully qualified name for the field. For an Enum
+// field, that's just its name.
+func (e EnumEntry) Declaration() string {
+	return string(e)
 }
 
 var (
