@@ -14,7 +14,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"reflect"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -385,11 +384,11 @@ func printAggregateMeta(name string, meta AggregateMeta, opt, bare, verbose bool
 		size := strconv.Itoa(fLayout.size)
 		align := strconv.Itoa(fLayout.alignment)
 		pad := strconv.Itoa(fLayout.padding)
-		t.Row(fLayout.Name, size, align, pad)
+		t.Row(fLayout.Declaration(), size, align, pad)
 
 		if fLayout.subAggregate != nil && verbose {
 			for _, sub := range fLayout.subAggregate {
-				name := fmt.Sprintf("%s::%s", fLayout.Name, sub.Name)
+				name := fmt.Sprintf("%s::%s", fLayout.Declaration(), sub.Declaration())
 				doPrint(name, sub.size, sub.alignment, sub.padding, t, bare)
 			}
 		}
@@ -443,30 +442,14 @@ func debugVersion() {
 		logError(err)
 	}
 
-	for name, nodes := range ast.Scope.Nodes {
-		if strings.HasPrefix(name, "__") {
-			continue
-		}
-
-		switch node := nodes[0].(type) {
-		case *cc.Declarator:
-			switch typ := node.Type().(type) {
-			case *cc.StructType:
-				fmt.Printf("%s: %v\n", name, typ.FieldByIndex(0).Name())
-			case *cc.UnionType:
-			case *cc.EnumType:
-			}
-		case *cc.StructOrUnionSpecifier:
-			if typ, isStruct := node.Type().(*cc.StructType); isStruct {
-				fmt.Printf("%s: %v\n", name, typ.FieldByIndex(0).Name())
-			} else {
-				fmt.Printf("strou %s: %v\n", name, reflect.TypeOf(node.Type()))
-			}
-		case *cc.EnumSpecifier:
-			if typ, isStruct := node.Type().(*cc.StructType); isStruct {
-				fmt.Printf("%s: %v\n", name, typ.FieldByIndex(0).Name())
-			} else {
-				fmt.Printf("es %s: %v\n", name, reflect.TypeOf(node.Type()))
+	for l := ast.TranslationUnit; l != nil; l = l.TranslationUnit {
+		ed := l.ExternalDeclaration
+		switch ed.Case {
+		case cc.ExternalDeclarationDecl:
+			switch typ := ed.Declaration.DeclarationSpecifiers.Type().(type) {
+			case *cc.StructType, *cc.UnionType, *cc.EnumType:
+				fmt.Printf("%v\n", ed)
+				fmt.Printf("%v\n", typ)
 			}
 		}
 	}
@@ -486,9 +469,9 @@ func printAggregate(name string, meta AggregateMeta, opt bool) string {
 	builder.WriteNewline()
 	for _, field := range meta.Layout {
 		builder.WriteBase("\t")
-		builder.WriteKeyword(field.Type)
+		builder.WriteKeyword(field.Type())
 		builder.WriteBase(" ")
-		builder.WriteBase(field.Name)
+		builder.WriteBase(field.Declaration())
 		builder.WriteBase(";")
 		builder.WriteNewline()
 	}

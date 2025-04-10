@@ -5,29 +5,12 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 
 	"modernc.org/cc/v4"
 )
 
-type Context map[string]Aggregate
-
-type PrimitiveKind uint
-
-const (
-	BasePKind PrimitiveKind = iota
-	PointerPKind
-	ArrayPKind
-	EnumPKind
-)
-
-type Field struct {
-	Name      string
-	Type      string
-	ArraySize int
-	Kind      PrimitiveKind
-}
+type Context map[string]*Aggregate
 
 type Layout struct {
 	Field
@@ -35,20 +18,6 @@ type Layout struct {
 	alignment    int
 	padding      int
 	subAggregate []Layout
-}
-
-type AggregateKind uint
-
-const (
-	StructKind AggregateKind = iota
-	UnionKind
-	EnumKind
-)
-
-type Aggregate struct {
-	Name   string
-	Fields []Field
-	Kind   AggregateKind
 }
 
 type AggregateMeta struct {
@@ -76,29 +45,21 @@ alias and gcc executable for a compiler and fails if no one works.`
 func (ctx Context) firstPass(fields []Field) ([]AggregateMeta, int, error) {
 	maxAlign := 0
 	resMetas := make([]AggregateMeta, 0, len(fields))
+
 	// First pass: evaluate the max alignment in the struct
 	for _, field := range fields {
-		// Base type case, just extract and cache locally
-		fMeta, isBase := TypeMap[field.Type]
-		if isBase {
-			size := fMeta.Size
-			if field.Kind == ArrayPKind {
-				size *= field.ArraySize
+		switch field.(type) {
+		case Basic, Array:
+			agg, err := ctx.handleValueType(field)
+			if err != nil {
+				return nil, -1, err
 			}
 
-			resMetas = append(resMetas, AggregateMeta{
-				Size:      size,
-				Alignment: fMeta.Alignment,
-			})
-
-			if fMeta.Alignment > maxAlign {
-				maxAlign = fMeta.Alignment
+			resMetas = append(resMetas, agg)
+			if agg.Alignment > maxAlign {
+				maxAlign = agg.Alignment
 			}
-			continue
-		}
-
-		// Pointer value: return system word align/size
-		if field.Kind == PointerPKind {
+		case FuncPointer, Pointer:
 			resMetas = append(resMetas, AggregateMeta{
 				Size:      pointerSize,
 				Alignment: pointerAlign,
@@ -107,10 +68,7 @@ func (ctx Context) firstPass(fields []Field) ([]AggregateMeta, int, error) {
 			if pointerAlign > maxAlign {
 				maxAlign = pointerAlign
 			}
-			continue
-		}
-
-		if field.Kind == EnumPKind {
+		case EnumEntry:
 			resMetas = append(resMetas, AggregateMeta{
 				Size:      enumSize,
 				Alignment: enumAlign,
@@ -119,25 +77,39 @@ func (ctx Context) firstPass(fields []Field) ([]AggregateMeta, int, error) {
 			if enumAlign > maxAlign {
 				maxAlign = enumAlign
 			}
-			continue
-		}
-
-		// Aggregate case
-		subMeta, err := ctx.resolveAggregate(field.Type)
-		if err != nil {
-			return nil, -1, err
-		}
-
-		if field.Kind == ArrayPKind {
-			subMeta.Size *= field.ArraySize
-		}
-
-		resMetas = append(resMetas, subMeta)
-		if subMeta.Alignment > maxAlign {
-			maxAlign = fMeta.Alignment
 		}
 	}
 	return resMetas, maxAlign, nil
+}
+
+func (ctx Context) handleValueType(field Field) (AggregateMeta, error) {
+	arrType, isArray := field.(Array)
+	fType := field.UnqualifiedType()
+
+	fMeta, isBase := TypeMap[fType]
+	if isBase {
+		size := fMeta.Size
+		if isArray {
+			size *= arrType.Elements
+		}
+
+		return AggregateMeta{
+			Size:      size,
+			Alignment: fMeta.Alignment,
+		}, nil
+	}
+
+	// Aggregate case
+	subMeta, err := ctx.resolveAggregate(fType)
+	if err != nil {
+		return AggregateMeta{}, err
+	}
+
+	if isArray {
+		subMeta.Size *= arrType.Elements
+	}
+
+	return subMeta, nil
 }
 
 func (ctx Context) resolveAggregate(aggType string) (AggregateMeta, error) {
@@ -262,58 +234,18 @@ func (ctx Context) Optimize(name string, meta AggregateMeta) (AggregateMeta, err
 	return ctx.ResolveMeta(name)
 }
 
-func (ctx Context) addEnum(name string, typedef bool) {
-	var qualName string
-	if typedef {
-		qualName = name
-	} else {
-		qualName = fmt.Sprintf("enum %s", name)
-	}
-
-	entry := Aggregate{
-		Name: qualName,
-		Kind: EnumKind,
-	}
-	ctx[qualName] = entry
-	ctx[name] = entry
-}
-
-func (ctx Context) addStruct(name string, str *cc.StructType, typedef bool) {
-	currStruct := Aggregate{}
-	for i := range str.NumFields() {
-		field := str.FieldByIndex(i)
-
-		currStruct.Fields = append(currStruct.Fields, Field{
-			Name: field.Name(),
-			Type: field.Type().String(),
-		})
-	}
-}
-func (ctx Context) addUnion(name string, str *cc.UnionType, typedef bool) {
-
-}
-
 func ExtractAggregates(fname, cont string, useCompiler bool) (Context, error) {
-	var err error
-	config := &cc.Config{
-		Predefined: "int __predefined_declarator;",
-	}
 
-	if useCompiler {
-		config, err = cc.NewConfig(runtime.GOOS, runtime.GOARCH)
-		if err != nil {
-			return nil, fmt.Errorf("%w:\n%s Original error: \n\t%w", ErrConfig,
-				compErrMsg, err)
-		}
+	config, err := cc.NewConfig(runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return nil, fmt.Errorf("%w:\n%s Original error: \n\t%w", ErrConfig,
+			compErrMsg, err)
 	}
 
 	srcs := []cc.Source{
 		{Name: "<predefined>", Value: config.Predefined},
+		{Name: "<builtin>", Value: cc.Builtin},
 		{Name: fname, Value: cont},
-	}
-
-	if useCompiler {
-		srcs = append(srcs, cc.Source{Name: "<builtin>", Value: cc.Builtin})
 	}
 
 	ast, err := cc.Translate(config, srcs)
@@ -327,144 +259,30 @@ func ExtractAggregates(fname, cont string, useCompiler bool) (Context, error) {
 
 	var ctx = make(Context)
 
-	for name, nodes := range ast.Scope.Nodes {
-		switch node := nodes[0].(type) {
-		case *cc.Declarator:
-			switch typ := node.Type().(type) {
-			case *cc.StructType:
-				ctx.addStruct(name, typ, true)
-			case *cc.UnionType:
-				ctx.addUnion(name, typ, true)
-			case *cc.EnumType:
-				ctx.addEnum(name, true)
+	// let us iterate over all declaration in the translation unit
+	for l := ast.TranslationUnit; l != nil; l = l.TranslationUnit {
+		extDecl := l.ExternalDeclaration
+
+		// we are only interested in ExternalDeclarationDecl...
+		if extDecl.Case != cc.ExternalDeclarationDecl {
+			continue
+		}
+
+		specifiers := extDecl.Declaration.DeclarationSpecifiers
+
+		// ...and specifically to Structs, Unions and Enums definitions
+		switch specifiers.Type().(type) {
+		case *cc.StructType, *cc.UnionType, *cc.EnumType:
+			aggregate, err := ParseAggregate(extDecl.Declaration)
+			if err != nil {
+				return nil, err
 			}
-		case *cc.StructOrUnionSpecifier:
-			switch typ := node.Type().(type) {
-			case *cc.StructType:
-				ctx.addStruct(name, typ, false)
-			case *cc.UnionType:
-				ctx.addUnion(name, typ, false)
-			}
-		case *cc.EnumSpecifier:
-			if _, isEnum := node.Type().(*cc.EnumType); isEnum {
-				ctx.addEnum(name, false)
+
+			names := GetAggregateNames(aggregate)
+			for _, name := range names {
+				ctx[name] = aggregate
 			}
 		}
 	}
 	return ctx, nil
-}
-
-// TODO
-// All types get the complete str as type so that the cli can show it
-// - [x] non typedef structs names should be "struct ...", likewise for unions
-//   - [x] typedefed anonymous structs/union (e.g. typedef struct { ... } S; )
-//
-// - [x] handle pointer types
-// - [x] handle multiple pointer types
-// - [x] handle array types
-//   - [x] handle struct array types (struct x arr[10])
-//
-// - [x] handle qualified types (e.g. unsigned long, volatile short)
-// - [ ] handle func pointers
-func getType(declList *cc.StructDeclarationList) string {
-	if declList == nil || declList.StructDeclaration == nil ||
-		declList.StructDeclaration.SpecifierQualifierList == nil {
-		return "error"
-	}
-
-	specQualList := declList.StructDeclaration.SpecifierQualifierList
-	typeSpec := specQualList.TypeSpecifier
-
-	baseType := ""
-
-	switch {
-	case typeSpec != nil && typeSpec.StructOrUnionSpecifier != nil:
-		sou := typeSpec.StructOrUnionSpecifier
-		baseType = sou.StructOrUnion.Token.SrcStr() + " " + sou.Token.SrcStr()
-	case typeSpec != nil && typeSpec.EnumSpecifier != nil:
-		es := typeSpec.EnumSpecifier
-		baseType = es.Token.SrcStr() + " " + es.Token2.SrcStr()
-	}
-
-	declr := declList.StructDeclaration.StructDeclaratorList.StructDeclarator
-	qual := extractQualifier(specQualList)
-	ptrQual := getPtrQual(declr)
-	return qual + ptrQual + baseType
-}
-
-func extractQualifier(specQualList *cc.SpecifierQualifierList) string {
-	var builder strings.Builder
-	switch {
-	case specQualList.TypeSpecifier != nil:
-		builder.WriteString(specQualList.TypeSpecifier.Token.SrcStr())
-	case specQualList.TypeQualifier != nil:
-		builder.WriteString(specQualList.TypeQualifier.Token.SrcStr())
-	case specQualList.TypeQualifier == nil && specQualList.TypeSpecifier == nil:
-		return ""
-	}
-
-	curr := specQualList.SpecifierQualifierList
-	for ; curr != nil; curr = curr.SpecifierQualifierList {
-		switch {
-		case curr.TypeQualifier != nil:
-			builder.WriteRune(' ')
-			builder.WriteString(curr.TypeQualifier.Token.SrcStr())
-		case curr.TypeSpecifier != nil:
-			builder.WriteRune(' ')
-			builder.WriteString(curr.TypeSpecifier.Token.SrcStr())
-		}
-	}
-	return builder.String()
-}
-
-func getPtrQual(declr *cc.StructDeclarator) string {
-	decl := declr.Declarator
-	switch {
-	case decl.Pointer != nil && decl.Pointer.TypeQualifiers == nil:
-		return " *"
-	case decl.Pointer != nil && decl.Pointer.TypeQualifiers != nil:
-		return " * const"
-	default:
-		return ""
-	}
-}
-
-func getField(declr *cc.StructDeclarator) (string, bool) {
-	decl := declr.Declarator
-	isPtr := false
-	if decl.Pointer != nil {
-		isPtr = true
-	}
-
-	pre := decl.DirectDeclarator
-	for inner := pre.DirectDeclarator; pre != nil && inner != nil; {
-		pre = inner
-		inner = inner.DirectDeclarator
-	}
-
-	return pre.Token.SrcStr(), isPtr
-}
-
-func isUnion(sou *cc.StructOrUnion) bool {
-	return sou.Token.SrcStr() == "union"
-}
-
-func isArray(declr *cc.StructDeclarator) (int, bool) {
-	dir := declr.Declarator.DirectDeclarator
-	if dir.Token.SrcStr() == "[" && dir.Token2.SrcStr() == "]" {
-		aExpr := dir.AssignmentExpression
-		if aExpr == nil {
-			return -1, false
-		}
-
-		switch expr := aExpr.(type) {
-		case *cc.PrimaryExpression:
-			size, err := strconv.ParseInt(expr.Token.SrcStr(), 10, 64)
-			if err != nil {
-				return -1, false
-			}
-			return int(size), true
-		}
-	}
-	return -1, false
 }
