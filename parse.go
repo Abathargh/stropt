@@ -106,8 +106,15 @@ func (p Pointer) Type() string {
 		builder.WriteString(qualifier)
 		builder.WriteRune(' ')
 	}
-	builder.WriteString(" * ")
+
 	builder.WriteString(p.TypeName)
+	builder.WriteString(" * ")
+
+	for _, pQualifier := range p.PointerQualifiers {
+		builder.WriteString(pQualifier)
+		builder.WriteRune(' ')
+	}
+
 	return builder.String()
 }
 
