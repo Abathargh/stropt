@@ -13,17 +13,18 @@ import (
 type FieldKind uint
 
 const (
-	ValueKind = iota
+	ValueKind FieldKind = iota
 	PointerKind
 	ArrayKind
 	FunctionPointerKind
+	EnumEntryKind
 )
 
 // AggregateKind represents the kind of aggregate
 type AggregateKind uint
 
 const (
-	StructKind = iota
+	StructKind AggregateKind = iota
 	UnionKind
 	EnumKind
 )
@@ -250,9 +251,18 @@ func ParseAggregate(decl *cc.Declaration) (*Aggregate, error) {
 		return nil, ErrNotAnAggregate
 	}
 
-	// ...as it will lead us to the struct/union specifier
+	// ...as it will lead us to the struct/union/enum specifier
 	aggrSpec := specs.TypeSpecifier.StructOrUnionSpecifier
+	enumSpec := specs.TypeSpecifier.EnumSpecifier
+
 	if aggrSpec == nil {
+		if enumSpec != nil {
+			err := parseEnum(enumSpec, &ret)
+			if err != nil {
+				return nil, err
+			}
+			return &ret, nil
+		}
 		return nil, ErrNotAnAggregate
 	}
 
@@ -267,8 +277,6 @@ func ParseAggregate(decl *cc.Declaration) (*Aggregate, error) {
 		ret.Kind = StructKind
 	case "union":
 		ret.Kind = UnionKind
-	case "enum":
-		ret.Kind = EnumKind
 	}
 
 	// if this is not a anonymous typedef'd struct, we get the name from here
@@ -314,6 +322,31 @@ func GetAggregateNames(aggregate *Aggregate) []string {
 	return names
 }
 
+// parseEnum parses the whole enum in one go, since it's the simplest
+// aggregate kind, and no special checks must be performed.
+func parseEnum(spec *cc.EnumSpecifier, enum *Aggregate) error {
+	// if this is nil, we just know this cannot be any other kind of aggregate
+	if spec == nil {
+		return ErrNotAnAggregate
+	}
+
+	// extract kind and name: typedef should already be here from earlier
+	enum.Kind = EnumKind
+
+	// Token is always `enum`, Token2 contains the non-anonymous enum name
+	name := spec.Token2.SrcStr()
+	if name != "" {
+		enum.Name = fmt.Sprintf("enum %s", spec.Token2.SrcStr())
+	}
+
+	// add the enum entries one by one, the parsing is quite simple in this case
+	for list := spec.EnumeratorList; list != nil; list = list.EnumeratorList {
+		entry := list.Enumerator.Token.SrcStr()
+		enum.Fields = append(enum.Fields, EnumEntry(entry))
+	}
+	return nil
+}
+
 // parseField is a builder for the Field type. It constructs and returns a
 // Field type described by the passed declaration.
 func parseField(fieldDecl *cc.StructDeclaration) Field {
@@ -329,6 +362,8 @@ func parseField(fieldDecl *cc.StructDeclaration) Field {
 		return Array{Basic{qualifiers, typeName, name}, meta.arraySize}
 	case FunctionPointerKind:
 		return FuncPointer{typeName, name, meta.argsTypes}
+	case EnumEntryKind:
+		return EnumEntry(name)
 	default:
 		return nil
 	}
@@ -346,14 +381,16 @@ func parseQualifiers(fieldDecl *cc.StructDeclaration) ([]string, string) {
 	list := fieldDecl.SpecifierQualifierList
 	for ; list != nil; list = list.SpecifierQualifierList {
 		switch list.Case {
-		case cc.SpecifierQualifierListTypeQual:
+		case cc.SpecifierQualifierListTypeQual: // case 1: TypeQualifier present
 			qual := list.TypeQualifier
 			qualifierId = qual.Token.SrcStr()
-		case cc.SpecifierQualifierListTypeSpec:
+		case cc.SpecifierQualifierListTypeSpec: // case 2: TypeSpecifier present
 			qual := list.TypeSpecifier
 			switch qual.Case {
-			case cc.TypeSpecifierStructOrUnion, cc.TypeSpecifierEnum:
+			case cc.TypeSpecifierStructOrUnion:
 				qualifierId = parseStructOrUnionQualifier(qual.StructOrUnionSpecifier)
+			case cc.TypeSpecifierEnum:
+				qualifierId = parseEnumQualifier(qual.EnumSpecifier)
 			default:
 				qualifierId = qual.Token.SrcStr()
 			}
@@ -376,6 +413,14 @@ func parseQualifiers(fieldDecl *cc.StructDeclaration) ([]string, string) {
 func parseStructOrUnionQualifier(spec *cc.StructOrUnionSpecifier) string {
 	qualifierKind := spec.StructOrUnion.Token.SrcStr()
 	qualifierName := spec.Token.SrcStr()
+	return fmt.Sprintf("%s %s", qualifierKind, qualifierName)
+}
+
+// parseEnumQualifier parses the enum qualifier in case it is a fully
+// qualified enum type.
+func parseEnumQualifier(spec *cc.EnumSpecifier) string {
+	qualifierKind := spec.Token.SrcStr()
+	qualifierName := spec.Token2.SrcStr()
 	return fmt.Sprintf("%s %s", qualifierKind, qualifierName)
 }
 

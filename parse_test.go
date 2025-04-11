@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"reflect"
 	"runtime"
 	"testing"
@@ -131,31 +132,31 @@ func TestStructBasicTypes(t *testing.T) {
 					}},
 			},
 		},
-		// {
-		// 	`enum example { test, prova, ssa };
-		// 	struct test_inner { int a1; enum example ex; };`,
-		// 	map[string]Aggregate1{
-		// 		"enum example": {
-		// 			Name:    "enum example",
-		// 			Typedef: "",
-		// 			Kind:    EnumKind1,
-		// 			Fields: []Field1{
-		// 				EnumEntry("test"),
-		// 				EnumEntry("prova"),
-		// 				EnumEntry("ssa"),
-		// 			},
-		// 		},
-		// 		"struct test_inner": {
-		// 			Name:    "struct test_inner",
-		// 			Typedef: "",
-		// 			Kind:    StructKind1,
-		// 			Fields: []Field1{
-		// 				Basic{nil, "int", "a1"},
-		// 				Basic{nil, "enum example", "ex"},
-		// 			},
-		// 		},
-		// 	},
-		// },
+		{
+			`enum example { test, prova, ssa };
+			struct test_inner { int a1; enum example ex; };`,
+			map[string]Aggregate{
+				"enum example": {
+					Name:    "enum example",
+					Typedef: "",
+					Kind:    EnumKind,
+					Fields: []Field{
+						EnumEntry("test"),
+						EnumEntry("prova"),
+						EnumEntry("ssa"),
+					},
+				},
+				"struct test_inner": {
+					Name:    "struct test_inner",
+					Typedef: "",
+					Kind:    StructKind,
+					Fields: []Field{
+						Basic{nil, "int", "a1"},
+						Basic{nil, "enum example", "ex"},
+					},
+				},
+			},
+		},
 		{
 			"typedef struct exs { float disc; double d; char data[50]; } example_t;",
 			map[string]Aggregate{
@@ -199,36 +200,36 @@ func TestStructBasicTypes(t *testing.T) {
 				},
 			},
 		},
-		// {
-		// 	"typedef enum { test, prova, versuch } example_e;",
-		// 	map[string]Aggregate1{
-		// 		"example_e": {
-		// 			Name:    "",
-		// 			Typedef: "example_e",
-		// 			Kind:    EnumKind1,
-		// 			Fields: []Field1{
-		// 				EnumEntry("test"),
-		// 				EnumEntry("prova"),
-		// 				EnumEntry("versuch"),
-		// 			},
-		// 		},
-		// 	},
-		// },
-		// {
-		// 	"typedef enum exe { test, prova, versuch } example_e;",
-		// 	map[string]Aggregate1{
-		// 		"example_t": {
-		// 			Name:    "enum exe",
-		// 			Typedef: "example_e",
-		// 			Kind:    EnumKind1,
-		// 			Fields: []Field1{
-		// 				EnumEntry("test"),
-		// 				EnumEntry("prova"),
-		// 				EnumEntry("versuch"),
-		// 			},
-		// 		},
-		// 	},
-		// },
+		{
+			"typedef enum { test, prova, versuch } example_e;",
+			map[string]Aggregate{
+				"example_e": {
+					Name:    "",
+					Typedef: "example_e",
+					Kind:    EnumKind,
+					Fields: []Field{
+						EnumEntry("test"),
+						EnumEntry("prova"),
+						EnumEntry("versuch"),
+					},
+				},
+			},
+		},
+		{
+			"typedef enum exe { test, prova, versuch } example_e;",
+			map[string]Aggregate{
+				"example_e": {
+					Name:    "enum exe",
+					Typedef: "example_e",
+					Kind:    EnumKind,
+					Fields: []Field{
+						EnumEntry("test"),
+						EnumEntry("prova"),
+						EnumEntry("versuch"),
+					},
+				},
+			},
+		},
 		{
 			"typedef struct { int (*fptr)(int, float); } fptr_t;",
 			map[string]Aggregate{
@@ -294,9 +295,8 @@ func TestStructBasicTypes(t *testing.T) {
 				continue
 			}
 
-			if !reflect.DeepEqual(aggregate, aggCase) {
-				t.Errorf("test: %s\nexpected %+v, got %+v", testCase.test,
-					aggCase, aggregate)
+			if msg, equal := aggregatesEqual(aggregate, aggCase); !equal {
+				t.Errorf("test: %s\n%s", testCase.test, msg)
 				continue
 			}
 			count++
@@ -327,4 +327,32 @@ func getAggregateName(agg Aggregate) string {
 		return agg.Typedef
 	}
 	return agg.Name
+}
+
+func aggregatesEqual(a1, a2 Aggregate) (string, bool) {
+	if a1.Name != a2.Name {
+		return fmt.Sprintf("different names, got %q - %q", a1.Name, a2.Name), false
+	}
+
+	if a1.Typedef != a2.Typedef {
+		return fmt.Sprintf("different typedefs, got %q - %q",
+			a1.Typedef, a2.Typedef), false
+	}
+
+	if a1.Kind != a2.Kind {
+		return fmt.Sprintf("different names, got %d - %d", a1.Kind, a2.Kind), false
+	}
+
+	if len(a1.Fields) != len(a2.Fields) {
+		return fmt.Sprintf("different field num, got %+v - %+v", a1.Fields,
+			a2.Fields), false
+	}
+
+	for idx := range len(a1.Fields) {
+		if !reflect.DeepEqual(a1.Fields[idx], a2.Fields[idx]) {
+			return fmt.Sprintf("different fields at index %d, got %+v - %+v",
+				idx, a1.Fields[idx], a2.Fields[idx]), false
+		}
+	}
+	return "", true
 }
