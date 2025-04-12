@@ -51,6 +51,19 @@ you are attempting to use the system compiler through the '-use-compiler'
 flag, but it could be that you do not have one installed or that this tool 
 cannot find it. The tool checks the CC environment variable, cc alias and gcc 
 executable for a compiler and fails if no one works.`
+	parseErrMsg = `
+you may have a C syntax error or you may be using a type defined somewhere 
+else, without including it via '#include'.`
+
+	predefined = `
+int __predefined_declarator;
+
+#if defined(__i386__) || defined(__arm__)
+typedef unsigned __predefined_size_t;
+#else
+typedef unsigned long long __predefined_size_t;
+#endif
+`
 )
 
 // ExtractAggregates parses the passed C source code contained in `cont` to
@@ -62,25 +75,21 @@ executable for a compiler and fails if no one works.`
 // include path will be needed if any `#include` directives are used. In that
 // case, the `useCompiler` flag can be used.
 func ExtractAggregates(fname, cont string, useCompiler bool) (Context, error) {
-	config, err := cc.NewConfig(runtime.GOOS, runtime.GOARCH)
+	config, sources, err := getConfigs(useCompiler)
 	if err != nil {
 		return nil, fmt.Errorf("%w:\n%s Original error: \n\t%w", ErrConfig,
 			compErrMsg, err)
 	}
 
-	srcs := []cc.Source{
-		{Name: "<predefined>", Value: config.Predefined},
-		{Name: "<builtin>", Value: cc.Builtin},
-		{Name: fname, Value: cont},
-	}
+	sources = append(sources, cc.Source{Name: fname, Value: cont})
 
-	ast, err := cc.Translate(config, srcs)
+	ast, err := cc.Translate(config, sources)
 	if err != nil {
+		msg := parseErrMsg
 		if strings.Contains(err.Error(), "include") {
-			return nil, fmt.Errorf("%w:%s\nOriginal error: \n\t%w", ErrParse,
-				includeErrMsg, err)
+			msg = includeErrMsg
 		}
-		return nil, fmt.Errorf("%w: %w", ErrParse, err)
+		return nil, fmt.Errorf("%w:%s\nOriginal error: \n\t%w", ErrParse, msg, err)
 	}
 
 	var ctx = make(Context)
@@ -319,4 +328,29 @@ func (ctx Context) resolveAggregate(aggType string) (AggregateMeta, error) {
 		return AggregateMeta{}, err
 	}
 	return subMeta, nil
+}
+
+// getConfigs initialize the various configurations structs/slices depending
+// on if the user wants to use a local compiler include path or not.
+func getConfigs(useCompiler bool) (*cc.Config, []cc.Source, error) {
+	if !useCompiler {
+		abi, err := cc.NewABI(runtime.GOOS, runtime.GOARCH)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		return &cc.Config{ABI: abi}, []cc.Source{
+			{Name: "<predefined>", Value: predefined},
+		}, nil
+	}
+
+	config, err := cc.NewConfig(runtime.GOOS, runtime.GOARCH)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return config, []cc.Source{
+		{Name: "<predefined>", Value: config.Predefined},
+		{Name: "<builtin>", Value: cc.Builtin},
+	}, nil
 }
