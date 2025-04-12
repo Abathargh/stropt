@@ -1,27 +1,16 @@
 package main
 
-// TODOs
-// - include paths
-// - additional sources
-// - include stdint types in predefined?
-// - typedef struct -> typedefs in general
-// - add support for function pointers parsing
-// - test as wasm app
-// --cut types/names if too long, with "..." in ui
-
 import (
 	"errors"
 	"flag"
 	"fmt"
 	"os"
-	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
-	"modernc.org/cc/v4"
 )
 
 const (
@@ -61,6 +50,13 @@ If no source code is passed as a string, then it is mandatory to use the
 		"comma-separated values"
 	optimizeUsage = "suggests an optimized layout and shows related statistics"
 	fileUsage     = "pass a file containing the type definitions"
+
+	entryWidth     = 15
+	titleWidth     = entryWidth*4 + 3 // 4 entries per row + padding
+	structBoxWidth = entryWidth * 2   // 2 boxes per row
+
+	headerColorHex = "#ececec"
+	entryColorHex  = "#aeaeae"
 )
 
 var (
@@ -70,53 +66,58 @@ var (
 	ErrSizeAlignNelem   = errors.New("expected 2 elements")
 	ErrSizeAlignValue   = errors.New("size and alignment must not be zero")
 
+	headerColor = lipgloss.Color(headerColorHex)
+	entryColor  = lipgloss.Color(entryColorHex)
+
 	headerStyle = lipgloss.NewStyle().
 			Bold(true).
-			Width(15).
-			Foreground(lipgloss.Color("#ececec")).
+			Width(entryWidth).
+			Foreground(headerColor).
 			Align(lipgloss.Center)
 
 	structStyle = lipgloss.NewStyle().
 			Bold(true).
-			Width(15).
-			Foreground(lipgloss.Color("#aeaeae")).
+			Width(entryWidth).
+			Foreground(entryColor).
 			Align(lipgloss.Center)
 
 	rowStyle = lipgloss.NewStyle().
 			Bold(false).
-			Width(15).
-			Foreground(lipgloss.Color("#aeaeae")).
+			Width(entryWidth).
+			Foreground(entryColor).
 			Align(lipgloss.Center)
 
 	titleBox = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			Width(63).
-			Foreground(lipgloss.Color("#AEAEAE")).
+			Width(titleWidth).
+			Foreground(entryColor).
 			Align(lipgloss.Center)
 
 	boxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			Width(30).
+			Width(structBoxWidth).
 			Margin(0, 1, 1, 0).
 			Padding(1, 1, 1, 2).
 			Align(lipgloss.Left)
 
-	baseStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FAFAFA"))
-
-	keywordStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#B29BC5"))
-
-	commentStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#747893"))
+	alignSizeMeta = []struct {
+		name string
+		fun  func(int, int)
+	}{
+		{"ptr", SetPointerAlignSize},
+		{"enum", SetEnumAlignSize},
+		{"char", SetCharAlignSize},
+		{"short", SetShortAlignSize},
+		{"int", SetIntAlignSize},
+		{"long", SetLongAlignSize},
+		{"long long", SetLongLongAlignSize},
+		{"float", SetFloatAlignSize},
+		{"double", SetDoubleAlignSize},
+		{"long double", SetLongDoubleAlignSize},
+	}
 )
 
 func main() {
-	if len(os.Args) > 1 && os.Args[1] == "debug" {
-		debugVersion()
-		return
-	}
-
 	if Version == "" {
 		info, ok := debug.ReadBuildInfo()
 		if ok {
@@ -173,15 +174,17 @@ func main() {
 		logErrorMessage("could not parse args: %s", err)
 	}
 
+	flags := []string{
+		ptr, enum, char, short, intM, long, longLong, float, double, longDouble,
+	}
+
 	switch {
 	case s32bit:
 		Set32BitSys()
 	case avr:
 		SetAvrSys()
 	default:
-		err := handleSizeAlignOptions(
-			ptr, enum, char, short, intM, long, longLong, float, double, longDouble,
-		)
+		err := handleSizeAlignOptions(flags)
 		if err != nil {
 			logError(fmt.Errorf("wrong option value: %w", err))
 		}
@@ -256,68 +259,19 @@ func stropt(fname, aggName, cont string, bare, verbose, optimize, comp bool) {
 	}
 }
 
-func handleSizeAlignOptions(p, e, c, s, i, l, ll, f, d, ld string) error {
-	switch {
-	case p != "":
-		size, align, err := getSizeAlign(p)
-		if err != nil {
-			return err
+func handleSizeAlignOptions(flags []string) error {
+	for idx, flag := range flags {
+		if flag == "" {
+			continue
 		}
-		SetPointerAlignSize(align, size)
-	case e != "":
-		size, align, err := getSizeAlign(e)
+
+		meta := alignSizeMeta[idx]
+		size, align, err := getSizeAlign(flag)
 		if err != nil {
-			return err
+			return fmt.Errorf("%s - %s", meta.name, err)
 		}
-		SetEnumAlignSize(align, size)
-	case c != "":
-		size, align, err := getSizeAlign(c)
-		if err != nil {
-			return err
-		}
-		SetCharAlignSize(align, size)
-	case s != "":
-		size, align, err := getSizeAlign(s)
-		if err != nil {
-			return err
-		}
-		SetShortAlignSize(align, size)
-	case i != "":
-		size, align, err := getSizeAlign(i)
-		if err != nil {
-			return err
-		}
-		SetIntAlignSize(align, size)
-	case l != "":
-		size, align, err := getSizeAlign(l)
-		if err != nil {
-			return err
-		}
-		SetLongAlignSize(align, size)
-	case ll != "":
-		size, align, err := getSizeAlign(ll)
-		if err != nil {
-			return err
-		}
-		SetLongLongAlignSize(align, size)
-	case f != "":
-		size, align, err := getSizeAlign(f)
-		if err != nil {
-			return err
-		}
-		SetFloatAlignSize(align, size)
-	case d != "":
-		size, align, err := getSizeAlign(d)
-		if err != nil {
-			return err
-		}
-		SetDoubleAlignSize(align, size)
-	case ld != "":
-		size, align, err := getSizeAlign(ld)
-		if err != nil {
-			return err
-		}
-		SetLongDoubleAlignSize(align, size)
+
+		meta.fun(size, align)
 	}
 	return nil
 }
@@ -325,11 +279,7 @@ func handleSizeAlignOptions(p, e, c, s, i, l, ll, f, d, ld string) error {
 func getSizeAlign(in string) (int, int, error) {
 	list, err := parseIntList(in)
 	if err != nil {
-		return -1, -1, fmt.Errorf("%w '%s'", ErrSizeAlignParsing, in)
-	}
-
-	if len(list) != 2 {
-		return -1, -1, ErrSizeAlignNelem
+		return -1, -1, fmt.Errorf("%w, got '%s'", err, in)
 	}
 
 	if list[0] == 0 || list[1] == 0 {
@@ -341,12 +291,16 @@ func getSizeAlign(in string) (int, int, error) {
 
 func parseIntList(in string) ([]int, error) {
 	splitted := strings.Split(in, ",")
+	if len(splitted) != 2 {
+		return nil, ErrSizeAlignNelem
+	}
+
 	list := make([]int, len(splitted))
 
 	for idx, elem := range splitted {
 		ielem, err := strconv.ParseInt(elem, 0, 0)
 		if err != nil {
-			return nil, err
+			return nil, ErrSizeAlignParsing
 		}
 		list[idx] = int(ielem)
 	}
@@ -364,26 +318,17 @@ func printAggregateMeta(name string, meta AggregateMeta, opt, bare, verbose bool
 		typeName = "Name (opt)"
 	}
 
-	t := table.New().
-		Border(lipgloss.RoundedBorder()).
-		StyleFunc(func(row, col int) lipgloss.Style {
-			switch {
-			case row == -1:
-				return headerStyle
-			case row == 0:
-				return structStyle
-			default:
-				return rowStyle
-			}
-		}).
-		Headers(typeName, "Size", "Alignment", "Padding")
+	t := makeTable(typeName)
 
 	doPrint(name, meta.Size, meta.Alignment, totPadding, t, bare)
 
 	for _, fLayout := range meta.Layout {
-		size := strconv.Itoa(fLayout.size)
-		align := strconv.Itoa(fLayout.alignment)
-		pad := strconv.Itoa(fLayout.padding)
+		var (
+			size  = strconv.Itoa(fLayout.size)
+			align = strconv.Itoa(fLayout.alignment)
+			pad   = strconv.Itoa(fLayout.padding)
+		)
+
 		t.Row(fLayout.Declaration(), size, align, pad)
 
 		if fLayout.subAggregate != nil && verbose {
@@ -399,6 +344,22 @@ func printAggregateMeta(name string, meta AggregateMeta, opt, bare, verbose bool
 	}
 }
 
+func makeTable(typeName string) *table.Table {
+	return table.New().
+		Border(lipgloss.RoundedBorder()).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			switch {
+			case row == -1:
+				return headerStyle
+			case row == 0:
+				return structStyle
+			default:
+				return rowStyle
+			}
+		}).
+		Headers(typeName, "Size", "Alignment", "Padding")
+}
+
 func doPrint(name string, size, align, pad int, tab *table.Table, bare bool) {
 	if bare {
 		fmt.Fprintf(
@@ -408,51 +369,12 @@ func doPrint(name string, size, align, pad int, tab *table.Table, bare bool) {
 		return
 	}
 
-	sizeStr := strconv.Itoa(size)
-	alignStr := strconv.Itoa(align)
-	padStr := strconv.Itoa(pad)
+	var (
+		sizeStr  = strconv.Itoa(size)
+		alignStr = strconv.Itoa(align)
+		padStr   = strconv.Itoa(pad)
+	)
 	tab.Row(name, sizeStr, alignStr, padStr)
-}
-
-func debugVersion() {
-	// Define the path to your C file.
-	fn := os.Args[2]
-
-	// Open the C file.
-	f, err := os.Open(fn)
-	if err != nil {
-		logErrorMessage("Failed to open file: %v", err)
-	}
-
-	// Set up the parser configuration.
-	config, err := cc.NewConfig(runtime.GOOS, runtime.GOARCH)
-	if err != nil {
-		logErrorMessage("could not create a config for the parser: %v", err)
-	}
-
-	// TODO add here a mock header for stdint types
-	srcs := []cc.Source{
-		{Name: "<predefined>", Value: config.Predefined},
-		{Name: "<builtin>", Value: cc.Builtin},
-		{Name: fn, Value: f},
-	}
-
-	ast, err := cc.Translate(config, srcs)
-	if err != nil {
-		logError(err)
-	}
-
-	for l := ast.TranslationUnit; l != nil; l = l.TranslationUnit {
-		ed := l.ExternalDeclaration
-		switch ed.Case {
-		case cc.ExternalDeclarationDecl:
-			switch typ := ed.Declaration.DeclarationSpecifiers.Type().(type) {
-			case *cc.StructType, *cc.UnionType, *cc.EnumType:
-				fmt.Printf("%v\n", ed)
-				fmt.Printf("%v\n", typ)
-			}
-		}
-	}
 }
 
 func printAggregate(name string, meta AggregateMeta, opt bool) string {
@@ -468,21 +390,28 @@ func printAggregate(name string, meta AggregateMeta, opt bool) string {
 	builder.WriteBase(" {")
 	builder.WriteNewline()
 	for _, field := range meta.Layout {
-		builder.WriteBase("\t")
-		builder.WriteKeyword(field.Type())
-		builder.WriteBase(" ")
-		builder.WriteBase(field.Declaration())
-		builder.WriteBase(";")
-		builder.WriteNewline()
-	}
-	builder.WriteBase("};")
+		var (
+			rType = keywordStyle.Render(field.Type())
+			rDecl = baseStyle.Render(field.Declaration())
+			rSemi = baseStyle.Render(";")
+		)
 
+		fmt.Fprintf(&builder, "\t%s %s%s\n", rType, rDecl, rSemi)
+	}
+
+	builder.WriteBase("};")
 	return builder.String()
 }
 
 type RenderBuilder struct {
 	strings.Builder
 }
+
+var (
+	baseStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#FAFAFA"))
+	keywordStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#B29BC5"))
+	commentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#747893"))
+)
 
 func (b *RenderBuilder) WriteBase(s string) {
 	b.Builder.WriteString(baseStyle.Render(s))
