@@ -4,10 +4,43 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
+	"slices"
 	"testing"
 
 	"modernc.org/cc/v4"
 )
+
+func TestGetName(t *testing.T) {
+	testCases := []struct {
+		test     Aggregate
+		expected []string
+	}{
+		{
+			Aggregate{"struct s1", "", StructKind, nil},
+			[]string{"struct s1", "s1"},
+		},
+		{
+			Aggregate{"", "s2_t", StructKind, nil},
+			[]string{"s2_t"},
+		},
+		{
+			Aggregate{"struct s3", "s3_t", StructKind, nil},
+			[]string{"struct s3", "s3", "s3_t"},
+		},
+	}
+
+	for _, testCase := range testCases {
+		names := GetAggregateNames(&testCase.test)
+		expected := testCase.expected
+
+		slices.Sort(names)
+		slices.Sort(expected)
+
+		if !slices.Equal(names, expected) {
+			t.Errorf("Names not matching, got %v, expected %v", names, expected)
+		}
+	}
+}
 
 func TestStructBasicTypes(t *testing.T) {
 	testCases := []struct {
