@@ -186,6 +186,8 @@ func (fp FuncPointer) Type() string {
 	return builder.String()
 }
 
+// UnqualifiedType returns the underlying type of the field without qualifiers
+// that only affect access/storage. Signedness and `longness` are kept.
 func (fp FuncPointer) UnqualifiedType() string {
 	return fp.Type()
 }
@@ -207,12 +209,17 @@ func (f FuncPointer) Declaration() string {
 	return builder.String()
 }
 
+// An EnumEntry is a representation of one of the symbols defined as part of
+// an enum.
 type EnumEntry string
 
+// Type returns the type of the FuncPointer field.
 func (ee EnumEntry) Type() string {
-	return string(ee)
+	return "enum"
 }
 
+// UnqualifiedType returns the underlying type of the field without qualifiers
+// that only affect access/storage. Signedness and `longness` are kept.
 func (ee EnumEntry) UnqualifiedType() string {
 	return string(ee)
 }
@@ -484,9 +491,16 @@ func parsePointerQualifiers(ptr *cc.Pointer) []string {
 func parseArrayName(direct *cc.DirectDeclarator) (string, int) {
 	// AssignmentExpression not nil if this is being called, this will be a
 	// PrimaryExpression, holding the array size
-	primaryExpr := direct.AssignmentExpression.(*cc.PrimaryExpression)
+	var (
+		primaryExpr = direct.AssignmentExpression.(*cc.PrimaryExpression)
+		token       = primaryExpr.Token
+	)
 
-	size, _ := strconv.Atoi(primaryExpr.Token.SrcStr())
+	if primaryExpr.ExpressionList != nil {
+		token = primaryExpr.ExpressionList.(*cc.PrimaryExpression).Token
+	}
+
+	size, _ := strconv.Atoi(token.SrcStr())
 	name := direct.DirectDeclarator.Token.SrcStr()
 	return name, size
 }

@@ -319,7 +319,7 @@ func (ctx Context) resolveAggregate(aggType string) (AggregateMeta, error) {
 	// Let us check if this type is defined first
 	fAgg, isAggregate := ctx[aggType]
 	if !isAggregate {
-		return AggregateMeta{}, fmt.Errorf("%w: inner %s", ErrSymbol, aggType)
+		return AggregateMeta{}, fmt.Errorf("%w: inner '%s'", ErrSymbol, aggType)
 	}
 
 	// If so, let us recursively resolve its alignment/size/padding

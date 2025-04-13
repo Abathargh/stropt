@@ -298,6 +298,56 @@ func TestStructBasicTypes(t *testing.T) {
 					}},
 			},
 		},
+		{
+			`struct sub { const char * foo; };
+			struct aos { struct sub arr[100]; };`,
+			map[string]Aggregate{
+				"struct sub": {
+					Name:    "struct sub",
+					Typedef: "",
+					Kind:    StructKind,
+					Fields: []Field{
+						Pointer{Basic{[]string{"const"}, "char", "foo"}, nil},
+					},
+				},
+				"struct aos": {
+					Name:    "struct aos",
+					Typedef: "",
+					Kind:    StructKind,
+					Fields: []Field{
+						Array{Basic{nil, "struct sub", "arr"}, 100},
+					},
+				},
+			},
+		},
+		{
+			`#define ARR_SIZE 100
+			struct def { char arr[ARR_SIZE]; };`,
+			map[string]Aggregate{
+				"struct def": {
+					Name:    "struct def",
+					Typedef: "",
+					Kind:    StructKind,
+					Fields: []Field{
+						Array{Basic{nil, "char", "arr"}, 100},
+					},
+				},
+			},
+		},
+		{
+			`#define ARR_SIZE (100)
+			struct def { char arr[ARR_SIZE]; };`,
+			map[string]Aggregate{
+				"struct def": {
+					Name:    "struct def",
+					Typedef: "",
+					Kind:    StructKind,
+					Fields: []Field{
+						Array{Basic{nil, "char", "arr"}, 100},
+					},
+				},
+			},
+		},
 	}
 
 	for _, testCase := range testCases {
