@@ -60,8 +60,6 @@ If no source code is passed as a string, then it is mandatory to use the
 )
 
 var (
-	Version = ""
-
 	ErrSizeAlignParsing = errors.New("could not parse size/alignment")
 	ErrSizeAlignNelem   = errors.New("expected 2 elements")
 	ErrSizeAlignValue   = errors.New("size and alignment must not be zero")
@@ -118,13 +116,6 @@ var (
 )
 
 func main() {
-	if Version == "" {
-		info, ok := debug.ReadBuildInfo()
-		if ok {
-			Version = info.Main.Version
-		}
-	}
-
 	var (
 		help     bool
 		bare     bool
@@ -147,7 +138,14 @@ func main() {
 		double     string
 		longDouble string
 		file       string
+
+		Version = "" // leave this empty, it gets filled elsewhere
 	)
+
+	info, ok := debug.ReadBuildInfo()
+	if ok {
+		Version = info.Main.Version
+	}
 
 	fs := flag.NewFlagSet("stropt", flag.ExitOnError)
 	fs.BoolVar(&help, "help", false, helpUsage)
@@ -229,7 +227,6 @@ func stropt(fname, aggName, cont string, bare, verbose, optimize, comp bool) {
 		fmt.Fprintf(os.Stdout, "(def) ")
 	} else {
 		fmt.Println(titleBox.Render(fmt.Sprintf("stropt - %s", aggName)))
-
 	}
 	printAggregateMeta(aggName, meta, false, bare, verbose)
 
@@ -249,13 +246,11 @@ func stropt(fname, aggName, cont string, bare, verbose, optimize, comp bool) {
 		}
 
 		printAggregateMeta(aggName, optMeta, true, bare, verbose)
-		if optimize {
-			fmt.Println(lipgloss.JoinHorizontal(
-				lipgloss.Top,
-				printAggregate(aggName, meta, false),
-				printAggregate(aggName, optMeta, true),
-			))
-		}
+		fmt.Println(lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			printAggregate(aggName, meta, false),
+			printAggregate(aggName, optMeta, true),
+		))
 	}
 }
 
@@ -266,54 +261,33 @@ func handleSizeAlignOptions(flags []string) error {
 		}
 
 		meta := alignSizeMeta[idx]
-		size, align, err := getSizeAlign(flag)
-		if err != nil {
-			return fmt.Errorf("%s - %s", meta.name, err)
+
+		splitted := strings.Split(flag, ",")
+		if len(splitted) != 2 {
+			return fmt.Errorf("%s - %s", meta.name, ErrSizeAlignNelem)
 		}
 
-		meta.fun(size, align)
+		f, ferr := strconv.ParseInt(splitted[0], 0, 0)
+		s, serr := strconv.ParseInt(splitted[1], 0, 0)
+		if ferr != nil || serr != nil {
+			return fmt.Errorf("%s - %s", meta.name, ErrSizeAlignParsing)
+		}
+
+		meta.fun(int(f), int(s))
 	}
 	return nil
 }
 
-func getSizeAlign(in string) (int, int, error) {
-	list, err := parseIntList(in)
-	if err != nil {
-		return -1, -1, fmt.Errorf("%w, got '%s'", err, in)
-	}
-
-	if list[0] == 0 || list[1] == 0 {
-		return -1, -1, ErrSizeAlignValue
-	}
-
-	return list[0], list[1], nil
-}
-
-func parseIntList(in string) ([]int, error) {
-	splitted := strings.Split(in, ",")
-	if len(splitted) != 2 {
-		return nil, ErrSizeAlignNelem
-	}
-
-	list := make([]int, len(splitted))
-
-	for idx, elem := range splitted {
-		ielem, err := strconv.ParseInt(elem, 0, 0)
-		if err != nil {
-			return nil, ErrSizeAlignParsing
-		}
-		list[idx] = int(ielem)
-	}
-	return list, nil
-}
-
 func printAggregateMeta(name string, meta AggregateMeta, opt, bare, verbose bool) {
-	totPadding := 0
+	var (
+		totPadding = 0
+		typeName   = "Name"
+	)
+
 	for _, fLayout := range meta.Layout {
 		totPadding += fLayout.padding
 	}
 
-	typeName := "Name"
 	if opt {
 		typeName = "Name (opt)"
 	}
@@ -379,16 +353,18 @@ func doPrint(name string, size, align, pad int, tab *table.Table, bare bool) {
 
 func printAggregate(name string, meta AggregateMeta, opt bool) string {
 	var builder RenderBuilder
+
 	if !opt {
 		builder.WriteComment("// default")
 	} else {
 		builder.WriteComment("// optimized")
 	}
 
-	builder.WriteNewline()
+	builder.WriteRune('\n')
 	builder.WriteKeyword(name)
 	builder.WriteBase(" {")
-	builder.WriteNewline()
+	builder.WriteRune('\n')
+
 	for _, field := range meta.Layout {
 		var (
 			rType = keywordStyle.Render(field.Type())
@@ -403,6 +379,8 @@ func printAggregate(name string, meta AggregateMeta, opt bool) string {
 	return builder.String()
 }
 
+// RenderBuilder is a wrapper around `strings.Builder` which exposes methods
+// for building strings with lipgloss styles applied upon them.
 type RenderBuilder struct {
 	strings.Builder
 }
@@ -413,22 +391,22 @@ var (
 	commentStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#747893"))
 )
 
+// WriteBase adds a string to the builder using the base style.
 func (b *RenderBuilder) WriteBase(s string) {
-	b.Builder.WriteString(baseStyle.Render(s))
+	b.WriteString(baseStyle.Render(s))
 }
 
+// WriteKeyword adds a string to the builder using the keyword style.
 func (b *RenderBuilder) WriteKeyword(s string) {
-	b.Builder.WriteString(keywordStyle.Render(s))
+	b.WriteString(keywordStyle.Render(s))
 }
 
+// WriteComment adds a string to the builder using the comment style.
 func (b *RenderBuilder) WriteComment(s string) {
-	b.Builder.WriteString(commentStyle.Render(s))
+	b.WriteString(commentStyle.Render(s))
 }
 
-func (b *RenderBuilder) WriteNewline() {
-	b.Builder.WriteRune('\n')
-}
-
+// String returns the final string built with this builder using the box style.
 func (b *RenderBuilder) String() string {
 	return boxStyle.Render(b.Builder.String())
 }
