@@ -202,7 +202,7 @@ func main() {
 	case len(fs.Args()) == 1 && file != "":
 		cont, err := os.ReadFile(file)
 		if err != nil {
-			logErrorMessage("Failed to open file: %v", err)
+			logErrorMessage("failed to open file: %v", err)
 		}
 		stropt(file, fs.Arg(0), string(cont), bare, verbose, optimize, useComp)
 	case len(fs.Args()) == 2:
@@ -246,11 +246,13 @@ func stropt(fname, aggName, cont string, bare, verbose, optimize, comp bool) {
 		}
 
 		printAggregateMeta(aggName, optMeta, true, bare, verbose)
-		fmt.Println(lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			printAggregate(aggName, meta, false),
-			printAggregate(aggName, optMeta, true),
-		))
+		if !bare {
+			fmt.Println(lipgloss.JoinHorizontal(
+				lipgloss.Top,
+				printAggregate(aggName, meta, false),
+				printAggregate(aggName, optMeta, true),
+			))
+		}
 	}
 }
 
