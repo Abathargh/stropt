@@ -268,6 +268,10 @@ func (ctx Context) Optimize(name string, meta AggregateMeta) (AggregateMeta, err
 	})
 
 	agg := ctx[name]
+	if agg.Kind != StructKind {
+		return ctx.ResolveMeta(name)
+	}
+
 	for idx := range agg.Fields {
 		agg.Fields[idx] = layout[idx].Field
 	}

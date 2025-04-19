@@ -348,6 +348,26 @@ func TestStructBasicTypes(t *testing.T) {
 				},
 			},
 		},
+		{
+			`
+			typedef struct int_cont {
+				volatile int a;
+				int * b;
+				const int * const c;
+				} int_cont_t;`,
+			map[string]Aggregate{
+				"int_cont_t": {
+					Name:    "struct int_cont",
+					Typedef: "int_cont_t",
+					Kind:    StructKind,
+					Fields: []Field{
+						Basic{[]string{"volatile"}, "int", "a"},
+						Pointer{Basic{nil, "int", "b"}, nil},
+						Pointer{Basic{[]string{"const"}, "int", "c"}, []string{"const"}},
+					},
+				},
+			},
+		},
 	}
 
 	for _, testCase := range testCases {

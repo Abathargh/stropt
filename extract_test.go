@@ -156,6 +156,23 @@ func TestComputeMeta(t *testing.T) {
 			},
 			nil,
 		},
+		{
+			`
+			typedef struct int_cont {
+				volatile int a;
+				int * b;
+				const int * const c;
+				} int_cont_t;`,
+			"struct int_cont",
+			24,
+			8,
+			[]Layout{
+				{size: 4, alignment: 4, padding: 4},
+				{size: 8, alignment: 8, padding: 0},
+				{size: 8, alignment: 8, padding: 0},
+			},
+			nil,
+		},
 	}
 
 	for _, testCase := range testCases {

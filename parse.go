@@ -83,8 +83,8 @@ func (b Basic) Declaration() string {
 // that only affect access/storage. Signedness and `longness` are kept.
 func (b Basic) UnqualifiedType() string {
 	var unqualType []string
-	for idx, qual := range b.Qualifiers {
-		if _, ok := keyQualifiers[qual]; ok || idx == len(b.Qualifiers)-1 {
+	for _, qual := range b.Qualifiers {
+		if _, isKey := keyQualifiers[qual]; isKey {
 			unqualType = append(unqualType, qual)
 		}
 	}
@@ -146,9 +146,6 @@ func (a Array) Type() string {
 		builder.WriteRune(' ')
 	}
 	builder.WriteString(a.TypeName)
-	builder.WriteRune('[')
-	builder.WriteString(strconv.Itoa(a.Elements))
-	builder.WriteRune(']')
 	return builder.String()
 }
 
