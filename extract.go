@@ -33,6 +33,7 @@ type Layout struct {
 type AggregateMeta struct {
 	Size      int
 	Alignment int
+	Kind      AggregateKind
 	Layout    []Layout
 }
 
@@ -176,9 +177,8 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 		return AggregateMeta{}, fmt.Errorf("name %s: %w", name, err)
 	}
 
-	layouts := make([]Layout, len(agg.Fields))
-
 	// Second pass: evaluate alignment/size/padding
+	layouts := make([]Layout, 0, len(agg.Fields))
 
 	// Simplified case: enum
 	if agg.Kind == EnumKind {
@@ -190,28 +190,35 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 
 	// Simplified case: union - info on the padding formula later
 	if agg.Kind == UnionKind {
-		maxIdx := -1
+		var (
+			maxSizeIdx = -1
+			maxSize    = -1
+		)
+
 		for idx, curr := range resMetas {
-			if curr.Size > maxIdx {
-				maxIdx = idx
+			if curr.Size > maxSize {
+				maxSizeIdx = idx
+				maxSize = curr.Size
 			}
+
+			layouts = append(layouts, Layout{
+				Field:     agg.Fields[idx],
+				size:      curr.Size,
+				alignment: curr.Alignment,
+				padding:   0,
+			})
 		}
-		maxElem := resMetas[maxIdx]
-		maxSize := maxElem.Size
+
+		maxElem := resMetas[maxSizeIdx]
 		padding := (maxAlign - (maxSize % maxAlign)) % maxAlign
+		layouts[len(layouts)-1].padding = padding
 
 		return AggregateMeta{
 			Size:      maxElem.Size + padding,
 			Alignment: maxAlign,
-			Layout: []Layout{{
-				Field:   agg.Fields[maxIdx],
-				padding: padding,
-			}},
+			Layout:    layouts,
 		}, nil
 	}
-
-	// Other simplified case: array member
-	// Other simplified case: pointer (fp, normal)
 
 	totSize := 0
 	for idx, field := range agg.Fields {
@@ -221,12 +228,12 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 		// this is the important part: how does one evaluate the correct padding?
 		// once the alignment is computed for the aggregate, then there are two
 		// cases:
-		// - if the field is not the last one, padding must be added if the next
-		// field would be misaligned with reference to its natural alignment, if
-		// put directly into the next byte after the current field.
 		// - if the field is the last one, padding must be added in such a way
 		// that, if another aggregate of the same type would be lied next to this
 		// one, it would be aligned too.
+		// - if the field is not the last one, padding must be added if the next
+		// field would be misaligned with reference to its natural alignment, if
+		// put directly into the next byte after the current field.
 		padding := 0
 		if idx == len(agg.Fields)-1 {
 			padding = (maxAlign - (totSize % maxAlign)) % maxAlign
@@ -236,12 +243,12 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 		}
 
 		totSize += padding
-		layouts[idx] = Layout{
+		layouts = append(layouts, Layout{
 			Field:     field,
 			size:      curr.Size,
 			alignment: curr.Alignment,
 			padding:   padding,
-		}
+		})
 
 		if curr.Layout != nil {
 			// this is an aggregate field, let's add some metadata to the Layout
@@ -279,7 +286,7 @@ func (ctx Context) Optimize(name string, meta AggregateMeta) (AggregateMeta, err
 	return ctx.ResolveMeta(name)
 }
 
-// firstPass implementes, as the name suggests, the first pass in the
+// firstPass implements, as the name suggests, the first pass in the
 // metadata resolution algorithm: it computes the max alignment for the
 // current aggregate, and handles any kind of field found, recursively
 // calling the resolution algorithm once more if it encounter another

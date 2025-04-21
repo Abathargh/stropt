@@ -173,6 +173,28 @@ func TestComputeMeta(t *testing.T) {
 			},
 			nil,
 		},
+		{
+			"union u1 { int a; double b };",
+			"union u1",
+			8,
+			8,
+			[]Layout{
+				{size: 4, alignment: 4, padding: 0},
+				{size: 8, alignment: 8, padding: 0},
+			},
+			nil,
+		},
+		{
+			"union u2 { char arr[9]; double b; };",
+			"union u2",
+			16,
+			8,
+			[]Layout{
+				{size: 9, alignment: 1, padding: 0},
+				{size: 8, alignment: 8, padding: 7},
+			},
+			nil,
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -192,33 +214,34 @@ func TestComputeMeta(t *testing.T) {
 		}
 
 		if meta.Size != testCase.expSize {
-			t.Errorf("Expected size: %d: got: %d", testCase.expSize, meta.Size)
+			t.Errorf("Expected size: %d: got: %d for '%s'", testCase.expSize,
+				meta.Size, testCase.test)
 		}
 
 		if meta.Alignment != testCase.expAlig {
-			t.Errorf("Expected alignment: %d: got: %d", testCase.expAlig,
-				meta.Alignment)
+			t.Errorf("Expected alignment: %d: got: %d for '%s'", testCase.expAlig,
+				meta.Alignment, testCase.test)
 		}
 
 		for idx, layout := range testCase.expLayout {
 			actualLayout := meta.Layout[idx]
 
 			if layout.size != actualLayout.size {
-				t.Errorf("Expected size for field %s: %d: got: %d",
+				t.Errorf("Expected size for field %s: %d: got: %d for '%s'",
 					actualLayout.Declaration(), layout.size, actualLayout.size,
-				)
+					testCase.test)
 			}
 
 			if layout.alignment != actualLayout.alignment {
-				t.Errorf("Expected alignment for field %s: %d: got: %d",
+				t.Errorf("Expected alignment for field %s: %d: got: %d for '%s'",
 					actualLayout.Declaration(), layout.alignment, actualLayout.alignment,
-				)
+					testCase.test)
 			}
 
 			if layout.padding != actualLayout.padding {
-				t.Errorf("Expected padding for field %s: %d: got: %d",
+				t.Errorf("Expected padding for field %s: %d: got: %d for '%s'",
 					actualLayout.Declaration(), layout.padding, actualLayout.padding,
-				)
+					testCase.test)
 			}
 
 			if layout.subAggregate != nil {
@@ -226,21 +249,22 @@ func TestComputeMeta(t *testing.T) {
 					actualSubL := layout.subAggregate[jdx]
 
 					if subLayout.size != actualSubL.size {
-						t.Errorf("Expected size for field %s: %d: got: %d",
+						t.Errorf("Expected size for field %s: %d: got: %d for '%s'",
 							actualSubL.Declaration(), subLayout.size, actualSubL.size,
-						)
+							testCase.test)
 					}
 
 					if subLayout.alignment != actualSubL.alignment {
-						t.Errorf("Expected alignment for field %s: %d: got: %d",
+						t.Errorf("Expected alignment for field %s: %d: got: %d for '%s'",
 							actualSubL.Declaration(), subLayout.alignment,
-							actualSubL.alignment,
+							actualSubL.alignment, testCase.test,
 						)
 					}
 
 					if subLayout.padding != actualSubL.padding {
-						t.Errorf("Expected padding for field %s: %d: got: %d",
+						t.Errorf("Expected padding for field %s: %d: got: %d for '%s'",
 							actualSubL.Declaration(), subLayout.padding, actualSubL.padding,
+							testCase.test,
 						)
 					}
 				}

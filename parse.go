@@ -195,6 +195,7 @@ func (f FuncPointer) Declaration() string {
 	var builder strings.Builder
 
 	builder.WriteString(f.Name)
+	builder.WriteRune('(')
 
 	for idx, arg := range f.Args {
 		builder.WriteString(arg)
@@ -203,6 +204,7 @@ func (f FuncPointer) Declaration() string {
 		}
 	}
 
+	builder.WriteRune(')')
 	return builder.String()
 }
 
