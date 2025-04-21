@@ -488,20 +488,69 @@ func parsePointerQualifiers(ptr *cc.Pointer) []string {
 // parseArrayName parses the direct declarator for the array type and returns
 // its name, alongside with its size.
 func parseArrayName(direct *cc.DirectDeclarator) (string, int) {
-	// AssignmentExpression not nil if this is being called, this will be a
-	// PrimaryExpression, holding the array size
+	// AssignmentExpression not nil if this is being called
 	var (
-		primaryExpr = direct.AssignmentExpression.(*cc.PrimaryExpression)
-		token       = primaryExpr.Token
+		primaryExpr = direct.AssignmentExpression
+		name        = direct.DirectDeclarator.Token.SrcStr()
+		size        = resolveExpression(primaryExpr)
 	)
-
-	if primaryExpr.ExpressionList != nil {
-		token = primaryExpr.ExpressionList.(*cc.PrimaryExpression).Token
-	}
-
-	size, _ := strconv.Atoi(token.SrcStr())
-	name := direct.DirectDeclarator.Token.SrcStr()
 	return name, size
+}
+
+// resolveExpression solves an integer expression and returns its result as
+// a number. Used a lot to solve array constant expressions.
+func resolveExpression(expr cc.ExpressionNode) int {
+	switch sizeExpr := expr.(type) {
+	case *cc.PrimaryExpression:
+		// handle list case (e.g. an expression in a parentheses)
+		if sizeExpr.ExpressionList != nil {
+			return resolveExpression(sizeExpr.ExpressionList)
+		}
+		size, _ := strconv.Atoi(sizeExpr.Token.SrcStr())
+		return size
+	case *cc.UnaryExpression:
+		switch sizeExpr.Case {
+		case cc.UnaryExpressionSizeofType:
+			var (
+				typeName = sizeExpr.TypeName
+				typeSpec = typeName.SpecifierQualifierList.TypeSpecifier
+				token    = typeSpec.Token.SrcStr()
+			)
+
+			// TODO make it work for non primitive types too
+			typ := TypeMap[token]
+			return typ.Size
+		}
+	case *cc.AdditiveExpression:
+		var (
+			op       = sizeExpr.Token.SrcStr()
+			lOperand = resolveExpression(sizeExpr.AdditiveExpression)
+			rOperand = resolveExpression(sizeExpr.MultiplicativeExpression)
+		)
+
+		switch op {
+		case "+":
+			return lOperand + rOperand
+		case "-":
+			return lOperand - rOperand
+		}
+	case *cc.MultiplicativeExpression:
+		var (
+			op       = sizeExpr.Token.SrcStr()
+			lOperand = resolveExpression(sizeExpr.MultiplicativeExpression)
+			rOperand = resolveExpression(sizeExpr.CastExpression)
+		)
+
+		switch op {
+		case "*":
+			return lOperand * rOperand
+		case "/":
+			return lOperand / rOperand
+		case "%":
+			return lOperand % rOperand
+		}
+	}
+	return -1
 }
 
 // parseFunctionPointerName extracts the function pointer name and argument

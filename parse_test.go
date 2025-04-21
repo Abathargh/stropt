@@ -368,6 +368,149 @@ func TestStructBasicTypes(t *testing.T) {
 				},
 			},
 		},
+		{
+			"struct expr1 { char arr[sizeof(double)]};",
+			map[string]Aggregate{
+				"struct expr1": {
+					Name:    "struct expr1",
+					Typedef: "",
+					Kind:    StructKind,
+					Fields: []Field{
+						Array{Basic{nil, "char", "arr"}, 8},
+					},
+				},
+			},
+		},
+		{
+			"struct expr2 { char arr[1 + 1]};",
+			map[string]Aggregate{
+				"struct expr2": {
+					Name:    "struct expr2",
+					Typedef: "",
+					Kind:    StructKind,
+					Fields: []Field{
+						Array{Basic{nil, "char", "arr"}, 2},
+					},
+				},
+			},
+		},
+		{
+			"struct expr3 { char arr[1 + 1 + 9]};",
+			map[string]Aggregate{
+				"struct expr3": {
+					Name:    "struct expr3",
+					Typedef: "",
+					Kind:    StructKind,
+					Fields: []Field{
+						Array{Basic{nil, "char", "arr"}, 11},
+					},
+				},
+			},
+		},
+		{
+			"struct expr4 { char arr[6 - 1]};",
+			map[string]Aggregate{
+				"struct expr4": {
+					Name:    "struct expr4",
+					Typedef: "",
+					Kind:    StructKind,
+					Fields: []Field{
+						Array{Basic{nil, "char", "arr"}, 5},
+					},
+				},
+			},
+		},
+		{
+			"struct expr5 { char arr[6 - 1 + sizeof(double) - sizeof(signed int)]};",
+			map[string]Aggregate{
+				"struct expr5": {
+					Name:    "struct expr5",
+					Typedef: "",
+					Kind:    StructKind,
+					Fields: []Field{
+						Array{Basic{nil, "char", "arr"}, 9},
+					},
+				},
+			},
+		},
+		{
+			"struct expr6 { char arr[sizeof(double) + 1]};",
+			map[string]Aggregate{
+				"struct expr6": {
+					Name:    "struct expr6",
+					Typedef: "",
+					Kind:    StructKind,
+					Fields: []Field{
+						Array{Basic{nil, "char", "arr"}, 9},
+					},
+				},
+			},
+		},
+		{
+			"struct expr7 { char arr[sizeof(double) - 1]};",
+			map[string]Aggregate{
+				"struct expr7": {
+					Name:    "struct expr7",
+					Typedef: "",
+					Kind:    StructKind,
+					Fields: []Field{
+						Array{Basic{nil, "char", "arr"}, 7},
+					},
+				},
+			},
+		},
+		{
+			"struct expr8 { char arr[2 * 3]};",
+			map[string]Aggregate{
+				"struct expr8": {
+					Name:    "struct expr8",
+					Typedef: "",
+					Kind:    StructKind,
+					Fields: []Field{
+						Array{Basic{nil, "char", "arr"}, 6},
+					},
+				},
+			},
+		},
+		{
+			"struct expr9 { char arr[15 / 3]};",
+			map[string]Aggregate{
+				"struct expr9": {
+					Name:    "struct expr9",
+					Typedef: "",
+					Kind:    StructKind,
+					Fields: []Field{
+						Array{Basic{nil, "char", "arr"}, 5},
+					},
+				},
+			},
+		},
+		{
+			"struct expr10 { char arr[6 % 5]};",
+			map[string]Aggregate{
+				"struct expr10": {
+					Name:    "struct expr10",
+					Typedef: "",
+					Kind:    StructKind,
+					Fields: []Field{
+						Array{Basic{nil, "char", "arr"}, 1},
+					},
+				},
+			},
+		},
+		{
+			"struct expr11 { char arr[(7 % 4) * sizeof(double) - 2 + (sizeof(int) / 4)]};",
+			map[string]Aggregate{
+				"struct expr11": {
+					Name:    "struct expr11",
+					Typedef: "",
+					Kind:    StructKind,
+					Fields: []Field{
+						Array{Basic{nil, "char", "arr"}, 23},
+					},
+				},
+			},
+		},
 	}
 
 	for _, testCase := range testCases {
