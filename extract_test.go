@@ -195,6 +195,17 @@ func TestComputeMeta(t *testing.T) {
 			},
 			nil,
 		},
+		{
+			"struct uinner { char a; }; union u3 { struct uinner i; double b; };",
+			"union u3",
+			8,
+			8,
+			[]Layout{
+				{size: 1, alignment: 1, padding: 0},
+				{size: 8, alignment: 8, padding: 0},
+			},
+			nil,
+		},
 	}
 
 	for _, testCase := range testCases {

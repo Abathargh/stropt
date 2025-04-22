@@ -33,7 +33,6 @@ type Layout struct {
 type AggregateMeta struct {
 	Size      int
 	Alignment int
-	Kind      AggregateKind
 	Layout    []Layout
 }
 
@@ -167,20 +166,19 @@ func ExtractAggregates(fname, cont string, useCompiler bool) (Context, error) {
 // identified by name, within an initialized context. This will also
 // recursively compute said metadata for any inner aggregate.
 func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
+	// retrieve the aggregate
 	agg, ok := ctx[name]
 	if !ok {
 		return AggregateMeta{}, fmt.Errorf("%w: %v", ErrSymbol, name)
 	}
 
+	// then perform the first pass of the algorithm
 	resMetas, maxAlign, err := ctx.firstPass(agg.Fields)
 	if err != nil {
 		return AggregateMeta{}, fmt.Errorf("name %s: %w", name, err)
 	}
 
-	// Second pass: evaluate alignment/size/padding
-	layouts := make([]Layout, 0, len(agg.Fields))
-
-	// Simplified case: enum
+	// simplified case: enum
 	if agg.Kind == EnumKind {
 		return AggregateMeta{
 			Size:      enumSize,
@@ -188,39 +186,18 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 		}, nil
 	}
 
-	// Simplified case: union - info on the padding formula later
+	// simplified case: union
 	if agg.Kind == UnionKind {
-		var (
-			maxSizeIdx = -1
-			maxSize    = -1
-		)
-
-		for idx, curr := range resMetas {
-			if curr.Size > maxSize {
-				maxSizeIdx = idx
-				maxSize = curr.Size
-			}
-
-			layouts = append(layouts, Layout{
-				Field:     agg.Fields[idx],
-				size:      curr.Size,
-				alignment: curr.Alignment,
-				padding:   0,
-			})
-		}
-
-		maxElem := resMetas[maxSizeIdx]
-		padding := (maxAlign - (maxSize % maxAlign)) % maxAlign
-		layouts[len(layouts)-1].padding = padding
-
-		return AggregateMeta{
-			Size:      maxElem.Size + padding,
-			Alignment: maxAlign,
-			Layout:    layouts,
-		}, nil
+		// find the biggest element in size
+		return resolveUnion(agg, resMetas, maxAlign), nil
 	}
 
-	totSize := 0
+	// second pass: evaluate alignment/size/padding for structs
+	var (
+		totSize = 0
+		layouts = make([]Layout, 0, len(agg.Fields))
+	)
+
 	for idx, field := range agg.Fields {
 		curr := resMetas[idx]
 		totSize += curr.Size
@@ -234,13 +211,15 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 		// - if the field is not the last one, padding must be added if the next
 		// field would be misaligned with reference to its natural alignment, if
 		// put directly into the next byte after the current field.
-		padding := 0
+
+		var padToAlignment int
 		if idx == len(agg.Fields)-1 {
-			padding = (maxAlign - (totSize % maxAlign)) % maxAlign
+			padToAlignment = maxAlign
 		} else {
-			next := resMetas[idx+1]
-			padding = (maxAlign - (totSize % maxAlign)) % next.Alignment
+			padToAlignment = resMetas[idx+1].Alignment
 		}
+
+		padding := (maxAlign - (totSize % maxAlign)) % padToAlignment
 
 		totSize += padding
 		layouts = append(layouts, Layout{
@@ -250,8 +229,8 @@ func (ctx Context) ResolveMeta(name string) (AggregateMeta, error) {
 			padding:   padding,
 		})
 
+		// this is an aggregate field, let's add some metadata to the Layout
 		if curr.Layout != nil {
-			// this is an aggregate field, let's add some metadata to the Layout
 			layouts[idx].subAggregate = curr.Layout
 		}
 	}
@@ -379,6 +358,44 @@ func (ctx Context) resolveAggregate(aggType string) (AggregateMeta, error) {
 		return AggregateMeta{}, err
 	}
 	return subMeta, nil
+}
+
+// resolveUnion is a builder for AggregateMeta when encountering an enum.
+func resolveUnion(agg *Aggregate, meta []AggregateMeta, max int) AggregateMeta {
+	var (
+		layouts []Layout
+		maxSize = -1
+	)
+
+	for idx, curr := range meta {
+		if curr.Size > maxSize {
+			maxSize = curr.Size
+		}
+
+		layouts = append(layouts, Layout{
+			Field:     agg.Fields[idx],
+			size:      curr.Size,
+			alignment: curr.Alignment,
+			padding:   0,
+		})
+
+		// this is an aggregate field, let's add some metadata to the Layout
+		if curr.Layout != nil {
+			layouts[idx].subAggregate = curr.Layout
+		}
+	}
+
+	// if the biggest element in size is not the one with bigger alignment
+	// then we must account for some padding -- it's the same case as for
+	// padding the last element of a struct
+	padding := (max - (maxSize % max)) % max
+	layouts[len(layouts)-1].padding = padding
+
+	return AggregateMeta{
+		Size:      maxSize + padding,
+		Alignment: max,
+		Layout:    layouts,
+	}
 }
 
 // getConfigs initialize the various configurations structs/slices depending
